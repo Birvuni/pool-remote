@@ -68,6 +68,16 @@ function setCircuit(id, isOn) {
   return c;
 }
 
+// An IntelliFlo VS: ~1,800 RPM for pool, ~3,000 RPM for spa (power rises roughly with RPM cubed).
+function pumps() {
+  const spa = circuitById(1).isOn;
+  const pool = circuitById(6).isOn;
+  const rpm = spa ? 3000 : pool ? 1800 : 0;
+  const watts = rpm ? Math.round(2950 * Math.pow(rpm / 3450, 3) + 40) : 0;
+  const flow = rpm ? Math.round(rpm / 40) : 0;
+  return [{ id: 1, name: 'IntelliFlo VS+SVRS', type: { val: 128, name: 'vs', desc: 'Intelliflo VS' }, rpm, watts, flow }];
+}
+
 function stateAll() {
   syncBodies();
   return {
@@ -80,7 +90,7 @@ function stateAll() {
     equipment: { model: 'EasyTouch2 4', controllerType: 'easytouch' },
     circuits,
     features: [],
-    pumps: [],
+    pumps: pumps(),
     schedules: schedules.map((s) => ({ ...s, circuit: circuitById(s.circuit) })),
   };
 }
@@ -101,6 +111,7 @@ http.createServer((req, res) => {
     console.log(key, raw);
     try {
       if (key === 'GET /state/all') return send(res, 200, stateAll());
+      if (key === 'GET /state/pumps') return send(res, 200, pumps());
       if (key === 'GET /state/temps') { syncBodies(); return send(res, 200, { bodies }); }
       if (key === 'PUT /state/circuit/setState') return send(res, 200, setCircuit(parseInt(body.id, 10), !!body.isOn));
       if (key === 'PUT /state/feature/setState') return send(res, 400, { message: 'No features' });

@@ -5,6 +5,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const energy = require('./energy');
 
 const PORT = parseInt(process.env.PORT || '8080', 10);
 const NJSPC_URL = new URL(process.env.NJSPC_URL || 'http://127.0.0.1:4200');
@@ -82,14 +83,43 @@ function serveStatic(req, res) {
   });
 }
 
+function sendJson(res, status, data) {
+  res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+  res.end(JSON.stringify(data));
+}
+
+// Endpoints served by Pool Remote itself (not forwarded to poolController).
+function local(req, res) {
+  const url = req.url.split('?')[0];
+  if (req.method === 'GET' && url === '/local/energy') return sendJson(res, 200, energy.report());
+  if (req.method === 'PUT' && url === '/local/energy/rate') {
+    let raw = '';
+    req.on('data', (c) => { raw += c; if (raw.length > 1000) req.destroy(); });
+    req.on('end', () => {
+      try {
+        const { rate } = JSON.parse(raw || '{}');
+        energy.setRate(Number(rate));
+        sendJson(res, 200, energy.report());
+      } catch (err) {
+        sendJson(res, 400, { message: err.message });
+      }
+    });
+    return;
+  }
+  sendJson(res, 404, { message: 'Not found' });
+}
+
 const server = http.createServer((req, res) => {
   if (req.url === '/api' || req.url.startsWith('/api/')) return proxy(req, res);
+  if (req.url.startsWith('/local/')) return local(req, res);
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     res.writeHead(405);
     return res.end();
   }
   serveStatic(req, res);
 });
+
+energy.start(NJSPC_URL);
 
 server.listen(PORT, () => {
   console.log(`Pool Remote running on http://0.0.0.0:${PORT} (poolController: ${NJSPC_URL.origin})`);

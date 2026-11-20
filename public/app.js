@@ -544,6 +544,105 @@ async function deleteSchedule() {
   }
 }
 
+// ---------- Energy ----------
+let E = null; // latest /local/energy report
+
+async function loadEnergy() {
+  try {
+    const res = await fetch('/local/energy');
+    if (!res.ok) throw new Error(`Energy data unavailable (${res.status})`);
+    E = await res.json();
+    renderEnergy();
+  } catch (err) {
+    $('energyBody').innerHTML = `<p class="empty">${esc(err.message)}</p>`;
+  }
+}
+
+const money = (v) => (v >= 100 ? `$${Math.round(v)}` : `$${v.toFixed(2)}`);
+const kwh = (v) => `${v < 10 ? v.toFixed(1) : Math.round(v)} kWh`;
+const hours = (s) => {
+  const h = s / 3600;
+  return h < 1 ? `${Math.round(s / 60)} min` : `${h.toFixed(1)} h`;
+};
+
+function renderEnergy() {
+  if (!E) return;
+  const box = $('energyBody');
+  const live = E.live || {};
+  const hasData = !!E.since;
+  if (!live.pumps && !hasData) {
+    box.innerHTML = `<p class="empty">No pump is reporting power yet. Energy tracking starts automatically once your
+      IntelliFlo shows up in poolController (it must be wired to the EasyTouch COM port).</p>`;
+    return;
+  }
+  const rateText = `${(E.rate * 100).toFixed(2)}¢/kWh`;
+  const liveLine = live.ok && live.watts > 0
+    ? `<span class="watts">${Math.round(live.watts).toLocaleString()} W</span>
+       <span class="meta">${live.rpm ? `${live.rpm.toLocaleString()} RPM` : ''}${live.flow ? ` · ${live.flow} GPM` : ''} · ${money(live.watts / 1000 * E.rate)}/hour</span>`
+    : `<span class="watts">0 W</span><span class="meta">${live.ok ? 'Pump off' : 'No reading right now'}</span>`;
+
+  const stat = (label, s, extra = '') => `
+    <div class="stat">
+      <div class="label">${label}</div>
+      <div class="cost">${money(s.cost)}</div>
+      <div class="kwh">${kwh(s.kWh)}${extra}</div>
+    </div>`;
+  const proj = E.month.projectedKWh;
+  const projText = proj == null ? '' : `<br>≈ $${Math.round(proj * E.rate)}/mo`;
+
+  const speeds = (E.bySpeed || []).filter((s) => s.seconds >= 60).slice(0, 6);
+  const speedTable = speeds.length ? `
+    <div class="subhead">By speed · last 30 days</div>
+    <table class="etable">
+      <tr><th>Speed</th><th>Time</th><th>Avg power</th><th>Cost</th></tr>
+      ${speeds.map((s) => `<tr><td>${s.rpm.toLocaleString()} RPM</td><td>${hours(s.seconds)}</td><td>${Math.round(s.avgWatts).toLocaleString()} W</td><td>${money(s.cost)}</td></tr>`).join('')}
+    </table>` : '';
+
+  const days = (E.days || []).slice(0, 7);
+  const dayTable = `
+    <div class="subhead">Last 7 days</div>
+    <table class="etable">
+      <tr><th>Day</th><th>Run time</th><th>Energy</th><th>Cost</th></tr>
+      ${days.map((d, i) => {
+        const label = i === 0 ? 'Today' : new Date(d.date + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+        return `<tr><td>${label}</td><td>${hours(d.runSeconds)}</td><td>${kwh(d.kWh)}</td><td>${money(d.cost)}</td></tr>`;
+      }).join('')}
+    </table>`;
+
+  box.innerHTML = `
+    <div class="energy-live">${liveLine}</div>
+    <div class="stats">
+      ${stat('Today', E.today)}
+      ${stat('Last 7 days', E.week)}
+      ${stat('This month', E.month, projText)}
+    </div>
+    ${speedTable}
+    ${dayTable}
+    <p class="hint">Rate ${rateText}${E.since ? ` · tracking since ${new Date(E.since + 'T12:00:00').toLocaleDateString([], { month: 'short', day: 'numeric' })}` : ''}</p>`;
+}
+
+async function editRate() {
+  const current = E ? (E.rate * 100).toFixed(2) : '14.00';
+  const input = prompt('Electricity rate in cents per kWh (energy + delivery charges):', current);
+  if (input === null) return;
+  const cents = parseFloat(input.replace(/[^0-9.]/g, ''));
+  if (!(cents > 0 && cents < 500)) { toast('Enter a rate like 15.83', true); return; }
+  try {
+    const res = await fetch('/local/energy/rate', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rate: cents / 100 }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Could not save rate');
+    E = data;
+    renderEnergy();
+    toast(`Rate set to ${cents.toFixed(2)}¢/kWh`);
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
 // ---------- Events ----------
 document.addEventListener('click', (e) => {
   const t = e.target.closest('button');
@@ -573,6 +672,7 @@ document.addEventListener('click', (e) => {
   }
   if (t.dataset.schedule) return openSchedule(parseInt(t.dataset.schedule, 10));
   if (t.id === 'addSchedule') return openSchedule(null);
+  if (t.id === 'editRate') return editRate();
   if (t.dataset.bit) {
     draftDays ^= parseInt(t.dataset.bit, 10);
     return renderDays();
@@ -593,11 +693,16 @@ $('scheduleForm').addEventListener('submit', (e) => {
 });
 
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') refresh(true);
+  if (document.visibilityState === 'visible') { refresh(true); loadEnergy(); }
 });
 
 setInterval(() => {
   if (document.visibilityState === 'visible') refresh();
 }, POLL_MS);
 
+setInterval(() => {
+  if (document.visibilityState === 'visible') loadEnergy();
+}, 30000);
+
 refresh(true);
+loadEnergy();

@@ -10,6 +10,9 @@ and talks to it through njsPC's REST API.
 - Heat setpoint (− / +) and heat mode per body
 - Lights and aux/feature toggles (hide unused ones with **Edit**; saved per phone)
 - Filter pump status
+- **Energy**: live watts/RPM, cost today / last 7 days / this month (with a full-month
+  projection), cost by pump speed, and a daily log. Needs a pump that reports power
+  (e.g. IntelliFlo on the EasyTouch COM port). Tap **Rate** to set your ¢/kWh.
 - Schedules: view, add, edit, delete
 
 No dependencies and no build step: just Node.js.
@@ -55,6 +58,14 @@ cd ~/pool-remote && git pull && pm2 restart poolRemote
 |---|---|---|
 | `PORT` | `8080` | Port the app listens on |
 | `NJSPC_URL` | `http://127.0.0.1:4200` | Where nodejs-poolController is |
+| `ENERGY_RATE` | `0.14` | Starting electricity rate in $/kWh (change it later in the app) |
+| `ENERGY_SAMPLE_MS` | `30000` | How often pump power is sampled |
+
+### Energy data
+
+The server samples pump power every 30 s and keeps daily totals (up to 400 days) in
+`data/energy.json`, saved every 5 minutes and on shutdown. Time when the Pi or
+poolController was down for more than 3 minutes isn't counted. Delete the file to start over.
 
 Example: `PORT=80 pm2 start server.js --name poolRemote --update-env`
 
@@ -88,3 +99,6 @@ npm start                                       # app on :8080
 | Heat modes for a body | `GET /config/body/:id/heatModes` |
 | Schedule options | `GET /config/options/schedules` |
 | Save / delete schedule | `PUT` / `DELETE /config/schedule` |
+| Pump power (energy logger) | `GET /state/pumps` |
+
+Pool Remote's own endpoints: `GET /local/energy` (report) and `PUT /local/energy/rate` `{rate}` ($/kWh).
