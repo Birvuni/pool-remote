@@ -252,9 +252,12 @@ main {
 .pill.on { background: var(--accent-soft); color: var(--accent); }
 
 /* Energy */
-.energy-live { display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px; }
-.energy-live .watts { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.energy-live .meta { color: var(--muted); font-size: 14px; }
+.live { display: grid; gap: 6px; margin-bottom: 12px; }
+.live-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.live-name { width: 56px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.live-val { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.live-row .meta { color: var(--muted); font-size: 13px; }
+.live-row.firing .live-val { color: var(--warm); }
 .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .stat { background: var(--tile); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; }
 .stat .label { font-size: 12px; color: var(--muted); font-weight: 600; }

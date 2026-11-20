@@ -569,30 +569,35 @@ function renderEnergy() {
   if (!E) return;
   const box = $('energyBody');
   const live = E.live || {};
+  const g = E.gas || {};
   const hasData = !!E.since;
-  if (!live.pumps && !hasData) {
-    box.innerHTML = `<p class="empty">No pump is reporting power yet. Energy tracking starts automatically once your
-      IntelliFlo shows up in poolController (it must be wired to the EasyTouch COM port).</p>`;
+  if (!live.ok && !hasData) {
+    box.innerHTML = `<p class="empty">Waiting for poolController…</p>`;
     return;
   }
-  const rateText = `${(E.rate * 100).toFixed(2)}¢/kWh`;
-  const liveLine = live.ok && live.watts > 0
-    ? `<span class="watts">${Math.round(live.watts).toLocaleString()} W</span>
-       <span class="meta">${live.rpm ? `${live.rpm.toLocaleString()} RPM` : ''}${live.flow ? ` · ${live.flow} GPM` : ''} · ${money(live.watts / 1000 * E.rate)}/hour</span>`
-    : `<span class="watts">0 W</span><span class="meta">${live.ok ? 'Pump off' : 'No reading right now'}</span>`;
+  const noPump = !live.pumps;
+
+  const pumpLine = noPump
+    ? `<div class="live-row"><span class="live-name">Pump</span><span class="meta">Not reporting power — needs an IntelliFlo on the EasyTouch COM port</span></div>`
+    : `<div class="live-row"><span class="live-name">Pump</span>
+        <span class="live-val">${live.watts > 0 ? `${Math.round(live.watts).toLocaleString()} W` : 'Off'}</span>
+        <span class="meta">${live.watts > 0 ? `${live.rpm ? live.rpm.toLocaleString() + ' RPM · ' : ''}${money(live.watts / 1000 * E.rate)}/hr` : ''}</span></div>`;
+  const heatLine = `<div class="live-row ${live.heating ? 'firing' : ''}"><span class="live-name">Heater</span>
+      <span class="live-val">${live.heating ? 'Firing' : 'Off'}</span>
+      <span class="meta">${live.heating ? `${g.unitsPerHour.toFixed(2)} ${esc(g.unit)}/hr · ${money(g.costPerHour)}/hr` : ''}</span></div>`;
 
   const stat = (label, s, extra = '') => `
     <div class="stat">
       <div class="label">${label}</div>
-      <div class="cost">${money(s.cost)}</div>
-      <div class="kwh">${kwh(s.kWh)}${extra}</div>
+      <div class="cost">${money(s.totalCost)}</div>
+      <div class="kwh">Pump ${money(s.cost)}<br>Heat ${money(s.gasCost)}${extra}</div>
     </div>`;
-  const proj = E.month.projectedKWh;
-  const projText = proj == null ? '' : `<br>≈ $${Math.round(proj * E.rate)}/mo`;
+  const proj = E.month.projected;
+  const projText = proj ? `<br>≈ $${Math.round(proj.totalCost)}/mo` : '';
 
   const speeds = (E.bySpeed || []).filter((s) => s.seconds >= 60).slice(0, 6);
   const speedTable = speeds.length ? `
-    <div class="subhead">By speed · last 30 days</div>
+    <div class="subhead">Pump by speed · last 30 days</div>
     <table class="etable">
       <tr><th>Speed</th><th>Time</th><th>Avg power</th><th>Cost</th></tr>
       ${speeds.map((s) => `<tr><td>${s.rpm.toLocaleString()} RPM</td><td>${hours(s.seconds)}</td><td>${Math.round(s.avgWatts).toLocaleString()} W</td><td>${money(s.cost)}</td></tr>`).join('')}
@@ -602,15 +607,16 @@ function renderEnergy() {
   const dayTable = `
     <div class="subhead">Last 7 days</div>
     <table class="etable">
-      <tr><th>Day</th><th>Run time</th><th>Energy</th><th>Cost</th></tr>
+      <tr><th>Day</th><th>Pump</th><th>Heater</th><th>Cost</th></tr>
       ${days.map((d, i) => {
         const label = i === 0 ? 'Today' : new Date(d.date + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
-        return `<tr><td>${label}</td><td>${hours(d.runSeconds)}</td><td>${kwh(d.kWh)}</td><td>${money(d.cost)}</td></tr>`;
+        return `<tr><td>${label}</td><td>${hours(d.runSeconds)}</td><td>${d.heatSeconds ? hours(d.heatSeconds) : '—'}</td><td>${money(d.totalCost)}</td></tr>`;
       }).join('')}
     </table>`;
 
+  const btuText = `${Math.round(g.inputBtu / 1000)}k BTU`;
   box.innerHTML = `
-    <div class="energy-live">${liveLine}</div>
+    <div class="live">${pumpLine}${heatLine}</div>
     <div class="stats">
       ${stat('Today', E.today)}
       ${stat('Last 7 days', E.week)}
@@ -618,29 +624,40 @@ function renderEnergy() {
     </div>
     ${speedTable}
     ${dayTable}
-    <p class="hint">Rate ${rateText}${E.since ? ` · tracking since ${new Date(E.since + 'T12:00:00').toLocaleDateString([], { month: 'short', day: 'numeric' })}` : ''}</p>`;
+    <p class="hint">Electricity ${(E.rate * 100).toFixed(2)}¢/kWh · Gas $${g.rate.toFixed(2)}/${esc(g.unit)} · Heater ${btuText}
+      · Heater cost is estimated from burner time${E.since ? ` · since ${new Date(E.since + 'T12:00:00').toLocaleDateString([], { month: 'short', day: 'numeric' })}` : ''}</p>`;
 }
 
-async function editRate() {
-  const current = E ? (E.rate * 100).toFixed(2) : '14.00';
-  const input = prompt('Electricity rate in cents per kWh (energy + delivery charges):', current);
-  if (input === null) return;
-  const cents = parseFloat(input.replace(/[^0-9.]/g, ''));
-  if (!(cents > 0 && cents < 500)) { toast('Enter a rate like 15.83', true); return; }
+async function saveEnergySettings(body, okMsg) {
   try {
-    const res = await fetch('/local/energy/rate', {
+    const res = await fetch('/local/energy/settings', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ rate: cents / 100 }),
+      body: JSON.stringify(body),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.message || 'Could not save rate');
+    if (!res.ok) throw new Error(data.message || 'Could not save');
     E = data;
     renderEnergy();
-    toast(`Rate set to ${cents.toFixed(2)}¢/kWh`);
+    toast(okMsg);
   } catch (err) {
     toast(err.message, true);
   }
+}
+
+async function editRate() {
+  const g = E?.gas || { rate: 2.97, unit: 'CCF', inputBtu: 264000 };
+  const elec = prompt('Electricity rate, cents per kWh (energy + delivery):', E ? (E.rate * 100).toFixed(2) : '14.00');
+  if (elec === null) return;
+  const gas = prompt(`Gas rate, dollars per ${g.unit} (all per-${g.unit} charges + taxes):`, g.rate.toFixed(2));
+  if (gas === null) return;
+  const btu = prompt('Heater input rating, BTU per hour (on the heater label, e.g. 264000):', String(g.inputBtu));
+  if (btu === null) return;
+  const cents = parseFloat(elec.replace(/[^0-9.]/g, ''));
+  const gasRate = parseFloat(gas.replace(/[^0-9.]/g, ''));
+  const inputBtu = parseFloat(btu.replace(/[^0-9.]/g, ''));
+  if (!(cents > 0 && cents < 500)) { toast('Enter an electricity rate like 15.83', true); return; }
+  await saveEnergySettings({ rate: cents / 100, gasRate, gasInputBtu: inputBtu }, 'Rates saved');
 }
 
 // ---------- Events ----------

@@ -1,5 +1,9 @@
-// Pump energy logger.
-// Samples pump watts/RPM from nodejs-poolController and keeps daily totals in data/energy.json.
+// Energy logger: pump electricity and gas-heater usage.
+//
+// Every SAMPLE_MS it reads nodejs-poolController for:
+//   - pump power (watts/RPM/flow) -> kWh
+//   - whether the controller is calling for gas heat -> burner hours -> gas used (fixed-input heater)
+// and keeps daily totals in data/energy.json.
 
 const http = require('http');
 const fs = require('fs');
@@ -12,21 +16,35 @@ const SAVE_MS = 5 * 60 * 1000;
 const MAX_GAP_MS = 3 * 60 * 1000; // don't count time across gaps longer than this (Pi or njsPC was down)
 const KEEP_DAYS = 400;
 const RPM_BUCKET = 50;
+// heatStatus names that mean a gas heater is firing (not solar or a heat pump).
+const GAS_HEAT_STATUSES = new Set(['heater', 'mtheater', 'hybheat']);
 
 let store = load();
-let last = null; // { at, watts, rpm, flow }
-let live = { watts: 0, rpm: 0, flow: 0, at: null, ok: false, pumps: 0 };
+let last = null; // previous sample: { at, watts, rpm, heating }
+let live = { watts: 0, rpm: 0, flow: 0, heating: false, at: null, ok: false, pumps: 0 };
 let dirty = false;
 
+function defaultGas() {
+  return {
+    inputBtu: parseFloat(process.env.GAS_INPUT_BTU || '264000'), // heater input rating, BTU/hr
+    btuPerUnit: parseFloat(process.env.GAS_BTU_PER_UNIT || '103700'), // BTU in one billing unit (1 CCF ≈ 103,700 BTU)
+    unit: process.env.GAS_UNIT || 'CCF',
+    rate: parseFloat(process.env.GAS_RATE || '2.97'), // $ per billing unit
+  };
+}
+
 function defaultStore() {
-  const rate = parseFloat(process.env.ENERGY_RATE || '0.14');
-  return { version: 1, rate, days: {} };
+  return { version: 2, rate: parseFloat(process.env.ENERGY_RATE || '0.14'), gas: defaultGas(), days: {} };
 }
 
 function load() {
   try {
     const s = JSON.parse(fs.readFileSync(FILE, 'utf8'));
-    if (s && typeof s.days === 'object') return s;
+    if (s && typeof s.days === 'object') {
+      s.gas = { ...defaultGas(), ...(s.gas || {}) }; // upgrade v1 files
+      s.version = 2;
+      return s;
+    }
   } catch { /* first run or unreadable file */ }
   return defaultStore();
 }
@@ -51,8 +69,13 @@ function dayKey(ms) {
 }
 
 function getDay(key) {
-  if (!store.days[key]) store.days[key] = { kWh: 0, runSeconds: 0, maxWatts: 0, bySpeed: {} };
-  return store.days[key];
+  const d = store.days[key] || (store.days[key] = {});
+  d.kWh ??= 0;
+  d.runSeconds ??= 0;
+  d.maxWatts ??= 0;
+  d.bySpeed ??= {};
+  d.heatSeconds ??= 0;
+  return d;
 }
 
 function prune() {
@@ -60,8 +83,8 @@ function prune() {
   while (keys.length > KEEP_DAYS) delete store.days[keys.shift()];
 }
 
-// Add energy for the interval [from, to] at a constant power, splitting across midnight.
-function accumulate(from, to, watts, rpm) {
+// Add usage for [from, to] with constant pump power and heater state, splitting at midnight.
+function accumulate(from, to, watts, rpm, heating = false) {
   let t = from;
   while (t < to) {
     const d = new Date(t);
@@ -79,15 +102,16 @@ function accumulate(from, to, watts, rpm) {
       b.kWh += kWh;
       b.seconds += seconds;
     }
+    if (heating) day.heatSeconds += seconds;
     t = end;
   }
   dirty = true;
 }
 
-function fetchPumps(njspcUrl) {
+function getJson(njspcUrl, urlPath) {
   return new Promise((resolve, reject) => {
     const req = http.get(
-      { hostname: njspcUrl.hostname, port: njspcUrl.port || 80, path: '/state/pumps', timeout: 10000 },
+      { hostname: njspcUrl.hostname, port: njspcUrl.port || 80, path: urlPath, timeout: 10000 },
       (res) => {
         let raw = '';
         res.on('data', (c) => { raw += c; });
@@ -105,32 +129,42 @@ function fetchPumps(njspcUrl) {
 async function sample(njspcUrl) {
   const now = Date.now();
   try {
-    const pumps = (await fetchPumps(njspcUrl)).filter((p) => p && p.id);
+    const [pumpList, temps] = await Promise.all([getJson(njspcUrl, '/state/pumps'), getJson(njspcUrl, '/state/temps')]);
+    const pumps = (Array.isArray(pumpList) ? pumpList : []).filter((p) => p && p.id);
     let watts = 0, rpm = 0, flow = 0;
     for (const p of pumps) {
       if (typeof p.watts === 'number' && p.watts > 0) watts += p.watts;
       if (typeof p.rpm === 'number') rpm = Math.max(rpm, p.rpm);
       if (typeof p.flow === 'number') flow = Math.max(flow, p.flow);
     }
-    // Power is assumed constant since the previous sample (step integration).
-    if (last && now - last.at <= MAX_GAP_MS) accumulate(last.at, now, last.watts, last.rpm);
-    last = { at: now, watts, rpm, flow };
-    live = { watts, rpm, flow, at: new Date(now).toISOString(), ok: true, pumps: pumps.length };
+    const heating = (temps?.bodies || []).some((b) => GAS_HEAT_STATUSES.has((b?.heatStatus?.name || '').toLowerCase()));
+    // Values are assumed constant since the previous sample (step integration).
+    if (last && now - last.at <= MAX_GAP_MS) accumulate(last.at, now, last.watts, last.rpm, last.heating);
+    last = { at: now, watts, rpm, heating };
+    live = { watts, rpm, flow, heating, at: new Date(now).toISOString(), ok: true, pumps: pumps.length };
   } catch (err) {
     last = null;
     live = { ...live, ok: false, error: err.message };
   }
 }
 
+function gasUnits(heatSeconds) {
+  return (store.gas.inputBtu * (heatSeconds / 3600)) / store.gas.btuPerUnit;
+}
+
 function summarize(keys) {
-  const out = { kWh: 0, runSeconds: 0 };
+  const out = { kWh: 0, runSeconds: 0, heatSeconds: 0 };
   for (const k of keys) {
     const d = store.days[k];
     if (!d) continue;
-    out.kWh += d.kWh;
-    out.runSeconds += d.runSeconds;
+    out.kWh += d.kWh || 0;
+    out.runSeconds += d.runSeconds || 0;
+    out.heatSeconds += d.heatSeconds || 0;
   }
   out.cost = out.kWh * store.rate;
+  out.gas = gasUnits(out.heatSeconds);
+  out.gasCost = out.gas * store.gas.rate;
+  out.totalCost = out.cost + out.gasCost;
   return out;
 }
 
@@ -144,12 +178,18 @@ function report() {
   const month = summarize(monthKeys);
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const completed = monthKeys.filter((k) => k !== today);
-  const avgPerDay = completed.length ? summarize(completed).kWh / completed.length : null;
+  // Full-month projection at the pace of the completed days logged so far.
+  let projected = null;
+  if (completed.length) {
+    const c = summarize(completed);
+    projected = { cost: (c.cost / completed.length) * daysInMonth, gasCost: (c.gasCost / completed.length) * daysInMonth };
+    projected.totalCost = projected.cost + projected.gasCost;
+  }
 
   const bySpeed = {};
   for (const k of lastNDays(30)) {
     const d = store.days[k];
-    if (!d) continue;
+    if (!d || !d.bySpeed) continue;
     for (const [rpm, b] of Object.entries(d.bySpeed)) {
       const s = bySpeed[rpm] || (bySpeed[rpm] = { rpm: parseInt(rpm, 10), kWh: 0, seconds: 0 });
       s.kWh += b.kWh;
@@ -157,13 +197,14 @@ function report() {
     }
   }
 
+  const g = store.gas;
   return {
     rate: store.rate,
+    gas: { ...g, unitsPerHour: g.inputBtu / g.btuPerUnit, costPerHour: (g.inputBtu / g.btuPerUnit) * g.rate },
     live,
     today: summarize([today]),
     week: summarize(lastNDays(7)),
-    // Full-month projection at the pace of the completed days logged so far.
-    month: { ...month, projectedKWh: avgPerDay === null ? null : avgPerDay * daysInMonth },
+    month: { ...month, projected },
     days: lastNDays(14).map((k) => ({ date: k, ...summarize([k]) })),
     bySpeed: Object.values(bySpeed)
       .map((s) => ({ ...s, cost: s.kWh * store.rate, avgWatts: s.seconds ? (s.kWh * 3.6e6) / s.seconds : 0 }))
@@ -172,19 +213,28 @@ function report() {
   };
 }
 
-function setRate(rate) {
-  if (typeof rate !== 'number' || !(rate > 0) || rate > 5) throw new Error('Rate must be in dollars per kWh, e.g. 0.1583');
-  store.rate = rate;
+// Update rates/settings. rate: $/kWh; gasRate: $ per gas unit; gasInputBtu: heater BTU/hr.
+function setSettings({ rate, gasRate, gasInputBtu } = {}) {
+  const num = (v) => (v === undefined || v === null || v === '' ? undefined : Number(v));
+  rate = num(rate); gasRate = num(gasRate); gasInputBtu = num(gasInputBtu);
+  if (rate !== undefined && !(rate > 0 && rate <= 5)) throw new Error('Electricity rate must be in dollars per kWh, e.g. 0.1583');
+  if (gasRate !== undefined && !(gasRate > 0 && gasRate <= 50)) throw new Error(`Gas rate must be in dollars per ${store.gas.unit}, e.g. 2.97`);
+  if (gasInputBtu !== undefined && !(gasInputBtu >= 10000 && gasInputBtu <= 2000000)) throw new Error('Heater input must be in BTU/hr, e.g. 264000');
+  if (rate !== undefined) store.rate = rate;
+  if (gasRate !== undefined) store.gas.rate = gasRate;
+  if (gasInputBtu !== undefined) store.gas.inputBtu = gasInputBtu;
   dirty = true;
   save();
 }
+
+function setRate(rate) { setSettings({ rate }); }
 
 function start(njspcUrl) {
   sample(njspcUrl);
   setInterval(() => sample(njspcUrl), SAMPLE_MS);
   setInterval(() => { prune(); save(); }, SAVE_MS);
   const flush = () => {
-    if (last) accumulate(last.at, Date.now(), last.watts, last.rpm);
+    if (last) accumulate(last.at, Date.now(), last.watts, last.rpm, last.heating);
     last = null;
     save();
     process.exit(0);
@@ -193,4 +243,4 @@ function start(njspcUrl) {
   process.on('SIGTERM', flush);
 }
 
-module.exports = { start, report, setRate, _test: { accumulate, dayKey, getStore: () => store } };
+module.exports = { start, report, setRate, setSettings, _test: { accumulate, dayKey, getStore: () => store, summarize } };

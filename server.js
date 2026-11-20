@@ -92,13 +92,12 @@ function sendJson(res, status, data) {
 function local(req, res) {
   const url = req.url.split('?')[0];
   if (req.method === 'GET' && url === '/local/energy') return sendJson(res, 200, energy.report());
-  if (req.method === 'PUT' && url === '/local/energy/rate') {
+  if (req.method === 'PUT' && (url === '/local/energy/rate' || url === '/local/energy/settings')) {
     let raw = '';
     req.on('data', (c) => { raw += c; if (raw.length > 1000) req.destroy(); });
     req.on('end', () => {
       try {
-        const { rate } = JSON.parse(raw || '{}');
-        energy.setRate(Number(rate));
+        energy.setSettings(JSON.parse(raw || '{}'));
         sendJson(res, 200, energy.report());
       } catch (err) {
         sendJson(res, 400, { message: err.message });
