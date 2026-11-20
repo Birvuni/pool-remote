@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Pool Remote</title>
+  <meta name="theme-color" content="#0b6e99">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Pool">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="title">
+      <h1 id="poolName">Pool</h1>
+      <div class="status"><span id="statusDot" class="dot"></span><span id="statusText">Connecting…</span></div>
+    </div>
+    <div class="air" id="airTemp" hidden>
+      <span class="air-label">Air</span>
+      <span class="air-value" id="airValue">--</span>
+    </div>
+  </header>
+
+  <main id="app">
+    <section class="hero card" id="hero">
+      <div class="hero-label" id="heroLabel">Water</div>
+      <div class="hero-temp"><span id="heroTemp">--</span><span class="unit" id="heroUnit">°F</span></div>
+      <div class="hero-sub" id="heroSub">&nbsp;</div>
+    </section>
+
+    <section class="card">
+      <h2>Mode</h2>
+      <div class="segmented" id="modeButtons" role="radiogroup" aria-label="Pool mode"></div>
+      <p class="hint" id="modeHint"></p>
+    </section>
+
+    <section class="card" id="heatSection" hidden>
+      <h2>Heat</h2>
+      <div id="heatList" class="heat-list"></div>
+    </section>
+
+    <section class="card" id="lightsSection" hidden>
+      <div class="section-head">
+        <h2>Lights</h2>
+        <button class="link-btn" data-edit="lights">Edit</button>
+      </div>
+      <div class="tiles" id="lightTiles"></div>
+    </section>
+
+    <section class="card" id="auxSection" hidden>
+      <div class="section-head">
+        <h2>Aux &amp; features</h2>
+        <button class="link-btn" data-edit="aux">Edit</button>
+      </div>
+      <div class="tiles" id="auxTiles"></div>
+    </section>
+
+    <section class="card">
+      <h2>Pump</h2>
+      <div id="pumpList" class="pump-list"></div>
+    </section>
+
+    <section class="card">
+      <div class="section-head">
+        <h2>Schedules</h2>
+        <button class="link-btn" id="addSchedule">+ Add</button>
+      </div>
+      <div id="scheduleList" class="schedule-list"></div>
+    </section>
+
+    <p class="footer" id="footer"></p>
+  </main>
+
+  <dialog id="scheduleDialog" class="sheet">
+    <form method="dialog" id="scheduleForm">
+      <h2 id="scheduleTitle">Schedule</h2>
+      <label class="field">
+        <span>Circuit</span>
+        <select id="schedCircuit" required></select>
+      </label>
+      <div class="row">
+        <label class="field">
+          <span>Start</span>
+          <input type="time" id="schedStart" required>
+        </label>
+        <label class="field">
+          <span>End</span>
+          <input type="time" id="schedEnd" required>
+        </label>
+      </div>
+      <div class="field">
+        <span>Days</span>
+        <div class="days" id="schedDays"></div>
+        <div class="day-presets">
+          <button type="button" class="link-btn" data-days="all">Every day</button>
+          <button type="button" class="link-btn" data-days="weekdays">Weekdays</button>
+          <button type="button" class="link-btn" data-days="weekends">Weekends</button>
+        </div>
+      </div>
+      <p class="hint" id="schedNote" hidden></p>
+      <div class="sheet-actions">
+        <button type="button" class="btn danger" id="schedDelete">Delete</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="schedCancel">Cancel</button>
+        <button type="submit" class="btn primary" id="schedSave">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,153 @@
+// A tiny fake nodejs-poolController for developing Pool Remote without real hardware.
+// Mimics an EasyTouch with a shared pool/spa body. Run: node dev/mock-njspc.js (port 4200)
+
+const http = require('http');
+
+const PORT = parseInt(process.env.PORT || '4200', 10);
+
+const circuitTypes = {
+  generic: { val: 0, name: 'generic', desc: 'Generic' },
+  spa: { val: 1, name: 'spa', desc: 'Spa' },
+  pool: { val: 2, name: 'pool', desc: 'Pool' },
+  intellibrite: { val: 16, name: 'intellibrite', desc: 'Intellibrite', isLight: true },
+  light: { val: 7, name: 'light', desc: 'Light', isLight: true },
+  notused: { val: 19, name: 'notused', desc: 'Not Used' },
+};
+
+const days = [
+  { val: 1, name: 'sun', desc: 'Sunday', dow: 0 },
+  { val: 2, name: 'mon', desc: 'Monday', dow: 1 },
+  { val: 4, name: 'tue', desc: 'Tuesday', dow: 2 },
+  { val: 8, name: 'wed', desc: 'Wednesday', dow: 3 },
+  { val: 16, name: 'thu', desc: 'Thursday', dow: 4 },
+  { val: 32, name: 'fri', desc: 'Friday', dow: 5 },
+  { val: 64, name: 'sat', desc: 'Saturday', dow: 6 },
+];
+const transformDays = (bits) => ({ val: bits, days: days.filter((d) => bits & d.val) });
+const heatModes = [{ val: 0, name: 'off', desc: 'Off' }, { val: 1, name: 'heater', desc: 'Heater' }];
+const timeTypes = [{ val: 0, name: 'manual', desc: 'Manual' }, { val: 1, name: 'sunrise', desc: 'Sunrise' }, { val: 2, name: 'sunset', desc: 'Sunset' }];
+const schedTypes = [{ val: 0, name: 'repeat', desc: 'Repeats' }, { val: 26, name: 'runonce', desc: 'Run Once' }];
+
+const circuits = [
+  { id: 1, name: 'Spa', isOn: false, type: circuitTypes.spa },
+  { id: 2, name: 'Pool Light', isOn: false, type: circuitTypes.intellibrite },
+  { id: 3, name: 'Spa Light', isOn: false, type: circuitTypes.light },
+  { id: 4, name: 'Cleaner', isOn: false, type: circuitTypes.generic },
+  { id: 5, name: 'Waterfall', isOn: false, type: circuitTypes.generic },
+  { id: 6, name: 'Pool', isOn: true, type: circuitTypes.pool },
+  { id: 7, name: 'AUX 5', isOn: false, type: circuitTypes.notused },
+];
+
+const bodies = [
+  { id: 1, name: 'Pool', circuit: 6, temp: 78, setPoint: 82, isOn: true, type: { val: 0, name: 'pool', desc: 'Pool' }, heatMode: heatModes[0], heatStatus: { val: 0, name: 'off', desc: 'Off' } },
+  { id: 2, name: 'Spa', circuit: 1, temp: 77, setPoint: 100, isOn: false, type: { val: 1, name: 'spa', desc: 'Spa' }, heatMode: heatModes[1], heatStatus: { val: 0, name: 'off', desc: 'Off' } },
+];
+
+let schedules = [
+  { id: 1, circuit: 6, startTime: 480, endTime: 960, scheduleDays: transformDays(127), scheduleType: schedTypes[0], startTimeType: timeTypes[0], endTimeType: timeTypes[0], isOn: false, disabled: false },
+  { id: 2, circuit: 2, startTime: 0, endTime: 1320, scheduleDays: transformDays(65), scheduleType: schedTypes[0], startTimeType: timeTypes[2], endTimeType: timeTypes[0], isOn: false, disabled: false },
+];
+
+const circuitById = (id) => circuits.find((c) => c.id === id);
+
+function syncBodies() {
+  for (const b of bodies) {
+    b.isOn = !!circuitById(b.circuit)?.isOn;
+    const heating = b.isOn && b.heatMode.name !== 'off' && b.temp < b.setPoint;
+    b.heatStatus = heating ? { val: 1, name: 'heater', desc: 'Heater' } : { val: 0, name: 'off', desc: 'Off' };
+  }
+}
+
+function setCircuit(id, isOn) {
+  const c = circuitById(id);
+  if (!c) throw Object.assign(new Error(`Invalid circuit id ${id}`), { status: 400 });
+  c.isOn = isOn;
+  // EasyTouch shared body: pool and spa are mutually exclusive.
+  if (isOn && (id === 1 || id === 6)) circuitById(id === 1 ? 6 : 1).isOn = false;
+  syncBodies();
+  return c;
+}
+
+function stateAll() {
+  syncBodies();
+  return {
+    alias: 'Backyard Pool',
+    controllerType: 'easytouch',
+    model: 'EasyTouch2 4',
+    status: { val: 1, name: 'ready', desc: 'Ready', percent: 100 },
+    appVersion: 'mock',
+    temps: { air: 64, units: { val: 0, name: 'F', desc: 'Fahrenheit' }, bodies },
+    equipment: { model: 'EasyTouch2 4', controllerType: 'easytouch' },
+    circuits,
+    features: [],
+    pumps: [],
+    schedules: schedules.map((s) => ({ ...s, circuit: circuitById(s.circuit) })),
+  };
+}
+
+function send(res, status, data) {
+  res.writeHead(status, { 'content-type': 'application/json' });
+  res.end(JSON.stringify(data));
+}
+
+http.createServer((req, res) => {
+  let raw = '';
+  req.on('data', (c) => { raw += c; });
+  req.on('end', () => {
+    let body = {};
+    try { body = raw ? JSON.parse(raw) : {}; } catch { return send(res, 400, { message: 'Bad JSON' }); }
+    const url = req.url.split('?')[0];
+    const key = `${req.method} ${url}`;
+    console.log(key, raw);
+    try {
+      if (key === 'GET /state/all') return send(res, 200, stateAll());
+      if (key === 'GET /state/temps') { syncBodies(); return send(res, 200, { bodies }); }
+      if (key === 'PUT /state/circuit/setState') return send(res, 200, setCircuit(parseInt(body.id, 10), !!body.isOn));
+      if (key === 'PUT /state/feature/setState') return send(res, 400, { message: 'No features' });
+      if (key === 'PUT /state/body/setPoint') {
+        const b = bodies.find((x) => x.id === parseInt(body.id, 10));
+        b.setPoint = parseInt(body.setPoint, 10);
+        syncBodies();
+        return send(res, 200, b);
+      }
+      if (key === 'PUT /state/body/heatMode') {
+        const b = bodies.find((x) => x.id === parseInt(body.id, 10));
+        b.heatMode = heatModes.find((m) => m.name === body.mode) || heatModes[0];
+        syncBodies();
+        return send(res, 200, b);
+      }
+      let m = url.match(/^\/config\/body\/(\d+)\/heatModes$/);
+      if (req.method === 'GET' && m) return send(res, 200, heatModes);
+      if (key === 'GET /config/options/schedules') {
+        return send(res, 200, {
+          scheduleDays: days.map((d) => ({ ...d, bitval: d.val })),
+          scheduleTypes: schedTypes,
+          scheduleTimeTypes: timeTypes,
+          circuits: circuits.filter((c) => c.type.name !== 'notused').map((c) => ({ id: c.id, name: c.name })),
+        });
+      }
+      if (key === 'PUT /config/schedule') {
+        let id = parseInt(body.id, 10);
+        if (!id) id = Math.max(0, ...schedules.map((s) => s.id)) + 1;
+        const existing = schedules.find((s) => s.id === id);
+        const s = existing || { id, isOn: false, disabled: false };
+        s.circuit = parseInt(body.circuit, 10);
+        s.startTime = body.startTime;
+        s.endTime = body.endTime;
+        s.scheduleDays = transformDays(body.scheduleDays);
+        s.scheduleType = schedTypes.find((t) => t.val === body.scheduleType) || schedTypes[0];
+        s.startTimeType = timeTypes.find((t) => t.val === body.startTimeType) || timeTypes[0];
+        s.endTimeType = timeTypes.find((t) => t.val === body.endTimeType) || timeTypes[0];
+        if (!existing) schedules.push(s);
+        return send(res, 200, s);
+      }
+      if (key === 'DELETE /config/schedule') {
+        schedules = schedules.filter((s) => s.id !== parseInt(body.id, 10));
+        return send(res, 200, {});
+      }
+      send(res, 404, { message: `Mock has no route for ${key}` });
+    } catch (err) {
+      send(res, err.status || 500, { message: err.message });
+    }
+  });
+}).listen(PORT, () => console.log(`Mock poolController on http://localhost:${PORT}`));
