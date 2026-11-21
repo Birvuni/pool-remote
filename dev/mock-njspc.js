@@ -64,6 +64,8 @@ function syncBodies() {
   }
 }
 
+const config = require('./mock-config')({ circuits, features, circuitTypes, bodies, days });
+
 function setCircuit(id, isOn) {
   const c = circuitById(id);
   if (!c) throw Object.assign(new Error(`Invalid circuit id ${id}`), { status: 400 });
@@ -74,18 +76,17 @@ function setCircuit(id, isOn) {
   return c;
 }
 
-// An IntelliFlo VS: ~1,800 RPM for pool, ~3,000 RPM for spa (power rises roughly with RPM cubed).
+// An IntelliFlo VS (power rises roughly with RPM cubed).
 function pumps() {
-  const spa = circuitById(1).isOn;
-  const pool = circuitById(6).isOn;
-  const rpm = spa ? 3000 : pool ? 1800 : 0;
+  // RPM follows the EasyTouch speed settings (highest speed among circuits that are on).
+  const rpm = config.vsSpeed();
   const watts = rpm ? Math.round(2950 * Math.pow(rpm / 3450, 3) + 40) : 0;
   const flow = rpm ? Math.round(rpm / 40) : 0;
   // Like the real system: the EasyTouch's relay-only "Two Speed" entry (id 10) is always present,
   // and the IntelliFlo shows up as pump 2 (once poolController is patched).
   const twoSpeed = { id: 10, name: 'Two Speed', type: { val: 65, name: 'ds', desc: 'Two-Speed' } };
   if (!INTELLIFLO) return [twoSpeed];
-  return [twoSpeed, { id: 2, name: 'Intelliflo VS', type: { val: 128, name: 'vs', desc: 'Intelliflo VS' }, rpm, watts, flow }];
+  return [twoSpeed, { id: config.vsPump.id, name: 'Intelliflo VS', type: { val: 128, name: 'vs', desc: 'Intelliflo VS' }, rpm, watts, flow }];
 }
 
 function stateAll() {
@@ -96,6 +97,7 @@ function stateAll() {
     model: 'EasyTouch2 4',
     status: { val: 1, name: 'ready', desc: 'Ready', percent: 100 },
     appVersion: 'mock',
+    time: config.panelTime(),
     temps: { air: 64, units: { val: 0, name: 'F', desc: 'Fahrenheit' }, bodies },
     equipment: { model: 'EasyTouch2 4', controllerType: 'easytouch' },
     circuits,
@@ -122,7 +124,7 @@ setInterval(() => {
   if (!packetLogging || !MOCK_LOG) return;
   let out = pktLine([165, 1, 15, 16, 2, 29], new Array(29).fill(0));
   if (INTELLIFLO) {
-    const p = pumps()[0];
+    const p = pumps().find((x) => typeof x.watts === 'number');
     out += pktLine([165, 0, 96, 16, 1, 4], [2, 196, 7, 8]);
     out += pktLine([165, 0, 16, 96, 7, 15], [10, 2, 2, p.watts >> 8, p.watts & 255, p.rpm >> 8, p.rpm & 255, 0, 0, 0, 0, 0, 1, 2, 3]);
   }
@@ -141,6 +143,8 @@ http.createServer((req, res) => {
     console.log(key, raw);
     try {
       if (key === 'GET /state/all') return send(res, 200, stateAll());
+      const cfg = config.handle(key, body);
+      if (cfg !== undefined) return send(res, 200, cfg);
       if (key === 'GET /app/options/logger') return send(res, 200, { packet: { enabled: packetLogging, logToConsole: packetLogging } });
       if (key === 'PUT /app/logger/setOptions') { packetLogging = !!body?.packet?.logToConsole; return send(res, 200, {}); }
       if (key === 'PUT /app/config/reload') return send(res, 200, {});

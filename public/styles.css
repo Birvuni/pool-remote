@@ -289,6 +289,56 @@ main {
 .unit-input { display: flex; align-items: center; gap: 6px; }
 .unit-input span { color: var(--muted); font-size: 14px; white-space: nowrap; }
 
+/* Top bar settings button */
+.top-right { display: flex; align-items: center; gap: 12px; }
+.icon-btn {
+  display: grid; place-items: center;
+  width: 40px; height: 40px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+/* Panel settings */
+.sheet.tall { min-height: 70vh; }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; }
+.sheet-head h2 { margin: 0; }
+.pset { border-top: 1px solid var(--line); padding: 14px 0 6px; }
+.pset h3 { margin: 0 0 8px; font-size: 15px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.pset h3.pset-sub { margin-top: 16px; }
+.pset-list { display: grid; gap: 6px; }
+.pset-row {
+  display: grid; gap: 2px; width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--tile);
+  text-align: left;
+  cursor: pointer;
+}
+.pset-row .name { font-weight: 600; }
+.pset-row .meta { font-size: 13px; color: var(--muted); }
+.pset-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+.speed-list { display: grid; gap: 8px; }
+.speed-row { display: grid; grid-template-columns: 1fr 130px 28px; gap: 8px; align-items: center; }
+.speed-row select, .speed-row input, .names-grid input {
+  width: 100%; font: inherit; font-size: 16px;
+  padding: 8px 10px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--tile); color: var(--text);
+}
+.speed-row .remove { padding: 4px; }
+.names-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.name-row { display: flex; align-items: center; gap: 6px; }
+.name-row span { width: 18px; font-size: 12px; color: var(--muted); text-align: right; }
+.check-row { display: flex; gap: 10px; align-items: flex-start; margin: 8px 0; cursor: pointer; }
+.check-row input { width: 20px; height: 20px; margin-top: 2px; flex: none; }
+.check-row small { color: var(--muted); }
+.clock-line { margin: 0 0 6px; }
+.warn { margin: 0 0 8px; padding: 10px 12px; border-radius: 10px; background: var(--warm-soft); color: var(--warm); font-size: 13px; }
+.warn code { font-size: 12px; }
+
 /* Schedules */
 .schedule-list { display: grid; gap: 8px; }
 .schedule {

@@ -20,9 +20,14 @@
       <h1 id="poolName">Pool</h1>
       <div class="status"><span id="statusDot" class="dot"></span><span id="statusText">Connecting…</span></div>
     </div>
-    <div class="air" id="airTemp" hidden>
-      <span class="air-label">Air</span>
-      <span class="air-value" id="airValue">--</span>
+    <div class="top-right">
+      <div class="air" id="airTemp" hidden>
+        <span class="air-label">Air</span>
+        <span class="air-value" id="airValue">--</span>
+      </div>
+      <button class="icon-btn" id="openPanel" aria-label="Panel settings" title="Panel settings">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6a.5.5 0 0 0 .1-.6l-2-3.5a.5.5 0 0 0-.6-.2l-2.5 1a7.3 7.3 0 0 0-1.7-1l-.4-2.6a.5.5 0 0 0-.5-.5h-4a.5.5 0 0 0-.5.4l-.4 2.7a7.3 7.3 0 0 0-1.7 1l-2.5-1a.5.5 0 0 0-.6.2l-2 3.5a.5.5 0 0 0 .1.6L4.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6a.5.5 0 0 0-.1.6l2 3.5a.5.5 0 0 0 .6.2l2.5-1a7.3 7.3 0 0 0 1.7 1l.4 2.6a.5.5 0 0 0 .5.5h4a.5.5 0 0 0 .5-.4l.4-2.7a7.3 7.3 0 0 0 1.7-1l2.5 1a.5.5 0 0 0 .6-.2l2-3.5a.5.5 0 0 0-.1-.6L19.4 13zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg>
+      </button>
     </div>
   </header>
 
@@ -149,8 +154,35 @@
     </form>
   </dialog>
 
+  <dialog id="panelDialog" class="sheet tall">
+    <div class="sheet-head">
+      <h2>Panel settings</h2>
+      <button type="button" class="link-btn" id="panelClose">Done</button>
+    </div>
+    <p class="hint">These are the EasyTouch's own settings. Changes are written to the panel and apply right away.</p>
+    <div id="panelBody"></div>
+  </dialog>
+
+  <dialog id="circuitDialog" class="sheet">
+    <form method="dialog" id="circuitForm">
+      <h2 id="circuitTitle">Circuit</h2>
+      <label class="field"><span>Name</span><select id="circName"></select></label>
+      <label class="field"><span>Function</span><select id="circFunction"></select></label>
+      <p class="hint" id="circFunctionNote" hidden>The Pool and Spa circuits control your valves and pump, so their function can't be changed here.</p>
+      <label class="check-row"><input type="checkbox" id="circFreeze">
+        <span><b>Freeze protection</b><br><small>Turns on automatically when the air is near freezing.</small></span></label>
+      <label class="field"><span>Egg timer (turns off after, when started by hand)</span><select id="circEgg"></select></label>
+      <div class="sheet-actions">
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="circCancel">Cancel</button>
+        <button type="submit" class="btn primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script src="app.js"></script>
+  <script src="panel.js"></script>
 </body>
 </html>

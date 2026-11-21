@@ -20,6 +20,15 @@ and talks to it through njsPC's REST API.
     - Costs are computed from logged run time and the *current* rating, so correcting a
       rating also corrects past days.
 - Schedules: view, add, edit, delete
+- **Panel settings** (gear icon): view and change the EasyTouch's own settings, with a confirmation
+  before anything is written to the panel:
+  - IntelliFlo speeds (RPM per circuit/feature)
+  - circuits and features: name, function, freeze protection, egg timer (Pool/Spa function is locked)
+  - custom names, spa manual heat, panel clock (set now, daylight saving, auto-sync from the Pi)
+  - read-only: controller model, heaters, poolController version
+
+  Pump speeds need `dev/patch-njspc-pump.js` applied (see Troubleshooting). Without it the app
+  blocks saving, because poolController would write the speeds to the wrong pump slot.
 
 No dependencies and no build step: just Node.js.
 
@@ -129,4 +138,6 @@ If the pump is on the bus and the controller reports it, but poolController (10.
 only a "Two Speed" pump, it's a poolController bug: with a Two-Speed pump defined, the IntelliFlo
 is created as pump id 2 and then deleted when the controller reports "pump slot 2: none".
 `node dev/patch-njspc-pump.js` patches it (with a backup; `--revert` undoes it), then
-`pm2 restart poolController`. Re-run the patch after updating nodejs-poolController.
+`pm2 restart poolController`. The same script also makes poolController store *Touch pumps with
+id = pump slot: saving pump settings sends the id as the slot, so an IntelliFlo stored as #2
+would otherwise be written to slot 2. Re-run the patch after updating nodejs-poolController.
