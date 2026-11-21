@@ -21,10 +21,6 @@
       <div class="status"><span id="statusDot" class="dot"></span><span id="statusText">Connecting…</span></div>
     </div>
     <div class="top-right">
-      <div class="air" id="airTemp" hidden>
-        <span class="air-label">Air</span>
-        <span class="air-value" id="airValue">--</span>
-      </div>
       <button class="icon-btn" id="openPanel" aria-label="Panel settings" title="Panel settings">
         <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6a.5.5 0 0 0 .1-.6l-2-3.5a.5.5 0 0 0-.6-.2l-2.5 1a7.3 7.3 0 0 0-1.7-1l-.4-2.6a.5.5 0 0 0-.5-.5h-4a.5.5 0 0 0-.5.4l-.4 2.7a7.3 7.3 0 0 0-1.7 1l-2.5-1a.5.5 0 0 0-.6.2l-2 3.5a.5.5 0 0 0 .1.6L4.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6a.5.5 0 0 0-.1.6l2 3.5a.5.5 0 0 0 .6.2l2.5-1a7.3 7.3 0 0 0 1.7 1l.4 2.6a.5.5 0 0 0 .5.5h4a.5.5 0 0 0 .5-.4l.4-2.7a7.3 7.3 0 0 0 1.7-1l2.5 1a.5.5 0 0 0 .6-.2l2-3.5a.5.5 0 0 0-.1-.6L19.4 13zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg>
       </button>
@@ -39,9 +35,18 @@
     <div id="piDetails" class="card pi-details" hidden></div>
 
     <section class="hero card" id="hero">
-      <div class="hero-label" id="heroLabel">Water</div>
-      <div class="hero-temp"><span id="heroTemp">--</span><span class="unit" id="heroUnit">°F</span></div>
+      <div class="hero-temps">
+        <div>
+          <div class="hero-label" id="heroLabel">Water</div>
+          <div class="hero-temp"><span id="heroTemp">--</span><span class="unit" id="heroUnit">°F</span></div>
+        </div>
+        <div class="hero-air" id="heroAir" hidden>
+          <div class="hero-label">Air</div>
+          <div class="hero-air-temp"><span id="heroAirTemp">--</span><span class="unit">°</span></div>
+        </div>
+      </div>
       <div class="hero-sub" id="heroSub">&nbsp;</div>
+      <dl class="hero-now" id="heroNow" aria-label="What's happening now"></dl>
     </section>
 
     <section class="card">

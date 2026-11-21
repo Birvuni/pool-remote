@@ -7,6 +7,12 @@ Every change to Pool Remote gets a release version, shown at the bottom of the a
 cd ~/pool-remote && git pull && pm2 restart poolRemote
 ```
 
+## 1.6.0 — 2026-11-21
+- **Water and air temperature together** in the top card (air moved out of the title bar).
+- **"Now" summary** in the same card: mode, pumps (IntelliFlo RPM and watts, plus running
+  equipment pumps like the water feature pump), heater status, what else is on, the running
+  or next schedule, freeze protection, and the total cost per hour right now.
+
 ## 1.5.1 — 2026-11-21
 - Panel settings: egg timers under an hour read "59 min" instead of "0 h 59 min".
 

@@ -126,6 +126,22 @@ main {
 .hero-temp { font-size: 64px; font-weight: 700; line-height: 1.05; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
 .hero-temp .unit { font-size: 26px; font-weight: 500; opacity: .8; margin-left: 2px; vertical-align: top; position: relative; top: 10px; }
 .hero-sub { font-size: 14px; opacity: .9; margin-top: 4px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.hero-temps { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.hero-air { text-align: right; }
+.hero-air-temp { font-size: 38px; font-weight: 700; line-height: 1.1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.hero-air-temp .unit { font-size: 20px; font-weight: 500; opacity: .8; }
+.hero-now {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 5px 12px;
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, .25);
+  font-size: 14px;
+}
+.hero-now:empty { display: none; }
+.hero-now dt { opacity: .8; font-weight: 600; }
+.hero-now dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
 .badge {
   display: inline-flex;
   align-items: center;

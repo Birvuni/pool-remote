@@ -200,32 +200,110 @@ function renderStatus(errMsg) {
     text.textContent = S.model || S.equipment?.model || 'Connected';
   }
 
-  const air = S.temps?.air;
-  $('airTemp').hidden = typeof air !== 'number';
-  $('airValue').textContent = `${fmtTemp(air)}°`;
 }
 
 function renderHero() {
   const list = bodies();
   const active = list.find((b) => b.isOn) || list[0];
   $('heroUnit').textContent = unit();
+  const air = S.temps?.air;
+  $('heroAir').hidden = typeof air !== 'number';
+  $('heroAirTemp').textContent = fmtTemp(air);
   if (!active) {
     $('heroLabel').textContent = 'Water';
     $('heroTemp').textContent = '--';
     $('heroSub').innerHTML = '&nbsp;';
+    renderNow();
     return;
   }
   const anyOn = list.some((b) => b.isOn);
   $('heroLabel').textContent = `${active.name || 'Pool'} water`;
   $('heroTemp').textContent = fmtTemp(active.temp);
   const parts = [];
-  const heating = active.heatStatus && active.heatStatus.name && active.heatStatus.name !== 'off';
-  if (heating) parts.push(`<span class="badge heating">Heating</span>`);
+  if (isHeating(active)) parts.push(`<span class="badge heating">Heating</span>`);
   const sp = setpointDraft[active.id] ?? active.setPoint;
   const modeName = active.heatMode?.name;
   if (modeName && modeName !== 'off' && typeof sp === 'number') parts.push(`<span>Heat to ${sp}°</span>`);
   if (!anyOn) parts.push('<span class="badge">Pump off · last reading</span>');
   $('heroSub').innerHTML = parts.join('') || '&nbsp;';
+  renderNow();
+}
+
+function isHeating(b) {
+  return !!(b.heatStatus && b.heatStatus.name && b.heatStatus.name !== 'off');
+}
+
+// Is an Energy-settings equipment item running right now? From live state, so it's instant.
+function equipIsOn(e) {
+  const src = e.source || {};
+  if (src.kind === 'heater') return bodies().some(isHeating);
+  const list = src.kind === 'feature' ? S.features : S.circuits;
+  const item = (list || []).find((x) => x.id === src.id);
+  return item ? !!item.isOn : !!E?.live?.on?.[e.id];
+}
+
+function speedPumpsNow() {
+  return (S.pumps || []).filter((p) => p && p.id && ['vs', 'vssvrs', 'vsf', 'vf'].includes((p.type?.name || '').toLowerCase()));
+}
+
+// Today's running schedule, or the next one that starts later today.
+function scheduleNow() {
+  const list = (S.schedules || []).filter((x) => x && x.id && !x.disabled && x.circuit);
+  const nameOf = (x) => x.circuit?.name || `Circuit ${x.circuit?.id ?? x.circuit}`;
+  const running = list.filter((x) => x.isOn);
+  if (running.length) {
+    return running.map((x) => `${nameOf(x)} until ${fmtClock(x.endTime || 0)}`).join(', ');
+  }
+  const now = new Date();
+  const mins = now.getHours() * 60 + now.getMinutes();
+  const today = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][now.getDay()];
+  const next = list
+    .filter((x) => (x.scheduleDays?.days || []).some((d) => (d.name || '').toLowerCase() === today) && (x.startTime || 0) > mins)
+    .sort((a, b) => a.startTime - b.startTime)[0];
+  return next ? `Next: ${nameOf(next)} at ${fmtClock(next.startTime)}` : 'No more schedules today';
+}
+
+function renderNow() {
+  const rows = [];
+  const list = bodies();
+  const on = list.find((b) => b.isOn);
+  rows.push(['Mode', on ? `${on.name} mode` : 'Everything off']);
+
+  // Pumps: the IntelliFlo (measured) plus any equipment marked Pump.
+  const pumpBits = [];
+  for (const p of speedPumpsNow()) {
+    pumpBits.push(p.rpm > 0 ? `${p.name || 'Pump'} ${p.rpm.toLocaleString()} RPM · ${Math.round(p.watts || 0).toLocaleString()} W` : `${p.name || 'Pump'} off`);
+  }
+  if (!speedPumpsNow().length) pumpBits.push(on ? 'Filter pump running' : 'Filter pump off');
+  for (const e of (E?.equipment || []).filter((x) => x.category === 'pump')) {
+    if (equipIsOn(e)) pumpBits.push(`${e.name} running`);
+  }
+  rows.push(['Pumps', pumpBits.join(' · ')]);
+
+  const heating = list.filter(isHeating);
+  const heatOn = list.filter((b) => b.heatMode?.name && b.heatMode.name !== 'off');
+  // Heat set "on" for a body that isn't running is normal: it heats when that body runs.
+  const heatText = (b) => (b.isOn ? `${b.name} at temperature (${b.setPoint}°)` : `Ready for ${b.name} (heats to ${b.setPoint}° when it runs)`);
+  rows.push(['Heater', heating.length
+    ? heating.map((b) => `Heating ${b.name} to ${b.setPoint}°`).join(', ')
+    : heatOn.length ? heatOn.map(heatText).join(', ') : 'Off']);
+
+  const bodyIds = bodyCircuitIds();
+  const onNames = []
+    .concat((S.circuits || []).filter((c) => c.isOn && !bodyIds.has(c.id)).map((c) => c.name))
+    .concat((S.features || []).filter((f) => f.isOn).map((f) => f.name));
+  rows.push(['Also on', onNames.length ? onNames.join(', ') : 'Nothing else']);
+
+  rows.push(['Schedule', scheduleNow()]);
+  if (S.freeze) rows.push(['Freeze', 'Freeze protection is running']);
+
+  // What it's all costing right now: measured pump power plus equipment that's on.
+  if (E) {
+    let perHour = (E.live?.watts || 0) / 1000 * E.rate;
+    for (const e of E.equipment || []) if (equipIsOn(e)) perHour += e.perHour?.cost || 0;
+    rows.push(['Cost now', perHour > 0 ? `${money(perHour)}/hr` : '$0.00/hr']);
+  }
+  $('heroNow').innerHTML = rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('');
 }
 
 function renderMode() {
@@ -596,7 +674,7 @@ async function loadEnergy(fresh = false) {
     if (!res.ok) throw new Error(`Energy data unavailable (${res.status})`);
     E = await res.json();
     renderEnergy();
-    if (S) renderPumps();
+    if (S) { renderPumps(); renderNow(); }
   } catch (err) {
     $('energyBody').innerHTML = `<p class="empty">${esc(err.message)}</p>`;
   }
