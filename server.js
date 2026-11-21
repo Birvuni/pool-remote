@@ -94,7 +94,7 @@ function local(req, res) {
   if (req.method === 'GET' && url === '/local/energy') return sendJson(res, 200, energy.report());
   if (req.method === 'PUT' && (url === '/local/energy/rate' || url === '/local/energy/settings')) {
     let raw = '';
-    req.on('data', (c) => { raw += c; if (raw.length > 1000) req.destroy(); });
+    req.on('data', (c) => { raw += c; if (raw.length > 20000) req.destroy(); });
     req.on('end', () => {
       try {
         energy.setSettings(JSON.parse(raw || '{}'));

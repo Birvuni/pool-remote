@@ -68,7 +68,7 @@
     <section class="card" id="energySection">
       <div class="section-head">
         <h2>Energy</h2>
-        <button class="link-btn" id="editRate">Rates</button>
+        <button class="link-btn" id="openSettings">Settings</button>
       </div>
       <div id="energyBody"><p class="empty">Loading…</p></div>
     </section>
@@ -116,6 +116,35 @@
         <span class="spacer"></span>
         <button type="button" class="btn" id="schedCancel">Cancel</button>
         <button type="submit" class="btn primary" id="schedSave">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="settingsDialog" class="sheet">
+    <form method="dialog" id="settingsForm">
+      <h2>Energy settings</h2>
+      <div class="row">
+        <label class="field">
+          <span>Electricity (¢ per kWh)</span>
+          <input type="number" id="setElecRate" step="0.01" min="0.01" inputmode="decimal" required>
+        </label>
+        <label class="field">
+          <span id="gasRateLabel">Gas ($ per CCF)</span>
+          <input type="number" id="setGasRate" step="0.01" min="0.01" inputmode="decimal" required>
+        </label>
+      </div>
+      <div class="section-head">
+        <h3 class="sheet-sub">Equipment</h3>
+        <button type="button" class="link-btn" id="addEquip">+ Add</button>
+      </div>
+      <p class="hint">Each item is counted while what it's linked to is on. Find the rating on the equipment
+        label: watts, or volts × amps. Gas heaters list BTU/hr input.</p>
+      <div id="equipList" class="equip-list"></div>
+      <p class="hint" id="equipWarn" hidden></p>
+      <div class="sheet-actions">
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="settingsCancel">Cancel</button>
+        <button type="submit" class="btn primary" id="settingsSave">Save</button>
       </div>
     </form>
   </dialog>

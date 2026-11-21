@@ -565,35 +565,66 @@ const hours = (s) => {
   return h < 1 ? `${Math.round(s / 60)} min` : `${h.toFixed(1)} h`;
 };
 
+function fmtGas(units) {
+  const u = E?.gas?.unit || 'CCF';
+  return `${units < 10 ? units.toFixed(2) : Math.round(units)} ${u}`;
+}
+
+function itemEnergyText(e, it) {
+  return e.energy === 'gas' ? fmtGas(it.gasUnits) : kwh(it.kWh);
+}
+
 function renderEnergy() {
   if (!E) return;
   const box = $('energyBody');
   const live = E.live || {};
   const g = E.gas || {};
-  const hasData = !!E.since;
-  if (!live.ok && !hasData) {
+  if (!live.ok && !E.since) {
     box.innerHTML = `<p class="empty">Waiting for poolController…</p>`;
     return;
   }
-  const noPump = !live.pumps;
 
-  const pumpLine = noPump
-    ? `<div class="live-row"><span class="live-name">Pump</span><span class="meta">Not reporting power — needs an IntelliFlo on the EasyTouch COM port</span></div>`
-    : `<div class="live-row"><span class="live-name">Pump</span>
-        <span class="live-val">${live.watts > 0 ? `${Math.round(live.watts).toLocaleString()} W` : 'Off'}</span>
-        <span class="meta">${live.watts > 0 ? `${live.rpm ? live.rpm.toLocaleString() + ' RPM · ' : ''}${money(live.watts / 1000 * E.rate)}/hr` : ''}</span></div>`;
-  const heatLine = `<div class="live-row ${live.heating ? 'firing' : ''}"><span class="live-name">Heater</span>
-      <span class="live-val">${live.heating ? 'Firing' : 'Off'}</span>
-      <span class="meta">${live.heating ? `${g.unitsPerHour.toFixed(2)} ${esc(g.unit)}/hr · ${money(g.costPerHour)}/hr` : ''}</span></div>`;
+  const rows = [];
+  if (live.pumps) {
+    rows.push(`<div class="live-row"><span class="live-name">Pump</span>
+      <span class="live-val">${live.watts > 0 ? `${Math.round(live.watts).toLocaleString()} W` : 'Off'}</span>
+      <span class="meta">${live.watts > 0 ? `${live.rpm ? live.rpm.toLocaleString() + ' RPM · ' : ''}${money(live.watts / 1000 * E.rate)}/hr` : 'measured'}</span></div>`);
+  }
+  for (const e of E.equipment || []) {
+    const on = !!live.on?.[e.id];
+    const word = on ? (e.energy === 'gas' ? 'Firing' : 'On') : 'Off';
+    const rating = e.energy === 'gas' ? `${Math.round(e.btu / 1000)}k BTU` : `${Math.round(e.watts).toLocaleString()} W`;
+    rows.push(`<div class="live-row ${on ? 'firing' : ''}"><span class="live-name">${esc(e.name)}</span>
+      <span class="live-val">${word}</span>
+      <span class="meta">${on ? `${money(e.perHour.cost)}/hr` : rating}</span></div>`);
+  }
+  const pumpNote = live.pumps ? '' : `<p class="hint">The pump isn't reporting power. Connect the IntelliFlo to the
+    EasyTouch, or add it in Settings with its watts.</p>`;
 
   const stat = (label, s, extra = '') => `
     <div class="stat">
       <div class="label">${label}</div>
       <div class="cost">${money(s.totalCost)}</div>
-      <div class="kwh">Pump ${money(s.cost)}<br>Heat ${money(s.gasCost)}${extra}</div>
+      <div class="kwh">Elec ${money(s.elecCost)}<br>Gas ${money(s.gasCost)}${extra}</div>
     </div>`;
   const proj = E.month.projected;
   const projText = proj ? `<br>≈ $${Math.round(proj.totalCost)}/mo` : '';
+
+  // Per-item breakdown over the last 30 days.
+  const L = E.last30;
+  const itemRows = [];
+  if (L.pumpKWh > 0) itemRows.push(`<tr><td>Pump (measured)</td><td>${hours(L.runSeconds)}</td><td>${kwh(L.pumpKWh)}</td><td>${money(L.pumpCost)}</td></tr>`);
+  for (const e of E.equipment || []) {
+    const it = L.items[e.id];
+    if (!it || it.seconds < 60) continue;
+    itemRows.push(`<tr><td>${esc(e.name)}</td><td>${hours(it.seconds)}</td><td>${itemEnergyText(e, it)}</td><td>${money(it.cost)}</td></tr>`);
+  }
+  const itemTable = itemRows.length ? `
+    <div class="subhead">By equipment · last 30 days</div>
+    <table class="etable">
+      <tr><th>Equipment</th><th>Time</th><th>Energy</th><th>Cost</th></tr>
+      ${itemRows.join('')}
+    </table>` : '';
 
   const speeds = (E.bySpeed || []).filter((s) => s.seconds >= 60).slice(0, 6);
   const speedTable = speeds.length ? `
@@ -607,58 +638,160 @@ function renderEnergy() {
   const dayTable = `
     <div class="subhead">Last 7 days</div>
     <table class="etable">
-      <tr><th>Day</th><th>Pump</th><th>Heater</th><th>Cost</th></tr>
+      <tr><th>Day</th><th>Electric</th><th>Gas</th><th>Total</th></tr>
       ${days.map((d, i) => {
         const label = i === 0 ? 'Today' : new Date(d.date + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
-        return `<tr><td>${label}</td><td>${hours(d.runSeconds)}</td><td>${d.heatSeconds ? hours(d.heatSeconds) : '—'}</td><td>${money(d.totalCost)}</td></tr>`;
+        return `<tr><td>${label}</td><td>${money(d.elecCost)}</td><td>${d.gasCost ? money(d.gasCost) : '—'}</td><td>${money(d.totalCost)}</td></tr>`;
       }).join('')}
     </table>`;
 
-  const btuText = `${Math.round(g.inputBtu / 1000)}k BTU`;
   box.innerHTML = `
-    <div class="live">${pumpLine}${heatLine}</div>
+    <div class="live">${rows.join('')}</div>
+    ${pumpNote}
     <div class="stats">
       ${stat('Today', E.today)}
       ${stat('Last 7 days', E.week)}
       ${stat('This month', E.month, projText)}
     </div>
+    ${itemTable}
     ${speedTable}
     ${dayTable}
-    <p class="hint">Electricity ${(E.rate * 100).toFixed(2)}¢/kWh · Gas $${g.rate.toFixed(2)}/${esc(g.unit)} · Heater ${btuText}
-      · Heater cost is estimated from burner time${E.since ? ` · since ${new Date(E.since + 'T12:00:00').toLocaleDateString([], { month: 'short', day: 'numeric' })}` : ''}</p>`;
+    <p class="hint">Electricity ${(E.rate * 100).toFixed(2)}¢/kWh · Gas $${g.rate.toFixed(2)}/${esc(g.unit)}
+      · Equipment costs are estimated from run time × rating${E.since ? ` · since ${new Date(E.since + 'T12:00:00').toLocaleDateString([], { month: 'short', day: 'numeric' })}` : ''}</p>`;
 }
 
-async function saveEnergySettings(body, okMsg) {
+// ---------- Energy settings ----------
+let draftEquip = [];
+
+function sourceOptions() {
+  const opts = [{ value: 'heater', label: 'Heater is firing' }];
+  const bodyCircuits = new Map(bodies().map((b) => [b.circuit, b.name]));
+  for (const c of S?.circuits || []) {
+    if ((c.type?.name || '').toLowerCase() === 'notused') continue;
+    const label = bodyCircuits.has(c.id) ? `${c.name} mode (pump running)` : c.name;
+    opts.push({ value: `circuit:${c.id}`, label });
+  }
+  for (const f of S?.features || []) opts.push({ value: `feature:${f.id}`, label: f.name || `Feature ${f.id}` });
+  return opts;
+}
+
+function sourceValue(src) {
+  if (!src) return '';
+  return src.kind === 'heater' ? 'heater' : `${src.kind}:${src.id}`;
+}
+
+function newEquipId() {
+  return 'e-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+function renderEquipList() {
+  const opts = sourceOptions();
+  $('equipList').innerHTML = draftEquip.length ? draftEquip.map((e, i) => {
+    const sv = sourceValue(e.source);
+    const known = opts.some((o) => o.value === sv);
+    const optionHtml = (known || !sv ? '' : `<option value="${esc(sv)}" selected>(missing: ${esc(sv)})</option>`) +
+      `<option value="" ${sv ? '' : 'selected'} disabled>Pick one…</option>` +
+      opts.map((o) => `<option value="${esc(o.value)}" ${o.value === sv ? 'selected' : ''}>${esc(o.label)}</option>`).join('');
+    const isGas = e.energy === 'gas';
+    return `
+      <div class="equip" data-index="${i}">
+        <label class="field full"><span>Name</span>
+          <input type="text" data-k="name" maxlength="40" value="${esc(e.name)}" placeholder="e.g. Air Blower" required></label>
+        <label class="field full"><span>Counted while</span>
+          <select data-k="source" required>${optionHtml}</select></label>
+        <label class="field"><span>Type</span>
+          <select data-k="energy">
+            <option value="electric" ${isGas ? '' : 'selected'}>Electric</option>
+            <option value="gas" ${isGas ? 'selected' : ''}>Gas</option>
+          </select></label>
+        <label class="field"><span>Rating</span>
+          <div class="unit-input">
+            <input type="number" data-k="rating" inputmode="numeric" min="1" step="any" required
+              value="${isGas ? (e.btu ?? '') : (e.watts ?? '')}" placeholder="${isGas ? '264000' : '1200'}">
+            <span>${isGas ? 'BTU/hr' : 'W'}</span>
+          </div></label>
+        <button type="button" class="link-btn remove" data-remove="${i}">Remove</button>
+      </div>`;
+  }).join('') : '<p class="empty">Nothing tracked yet. Tap + Add.</p>';
+  updateEquipWarn();
+}
+
+// Read the form back into draftEquip (keeps typed values when re-rendering).
+function readEquipForm() {
+  document.querySelectorAll('#equipList .equip').forEach((row) => {
+    const e = draftEquip[parseInt(row.dataset.index, 10)];
+    e.name = row.querySelector('[data-k="name"]').value;
+    const sv = row.querySelector('[data-k="source"]').value;
+    e.source = sv === 'heater' ? { kind: 'heater' } : sv ? { kind: sv.split(':')[0], id: parseInt(sv.split(':')[1], 10) } : null;
+    e.energy = row.querySelector('[data-k="energy"]').value;
+    const rating = parseFloat(row.querySelector('[data-k="rating"]').value);
+    if (e.energy === 'gas') { e.btu = rating; delete e.watts; } else { e.watts = rating; delete e.btu; }
+  });
+}
+
+function updateEquipWarn() {
+  const warn = $('equipWarn');
+  const bodyIds = new Set(bodies().map((b) => b.circuit));
+  const pumpLike = draftEquip.some((e) => e.source?.kind === 'circuit' && bodyIds.has(e.source.id) && e.energy === 'electric');
+  warn.hidden = !(pumpLike && E?.live?.pumps);
+  warn.textContent = 'Your pump is already measured, so an item linked to Pool/Spa mode would count it twice.';
+}
+
+function openSettings() {
+  if (!E) { toast('Energy data not loaded yet', true); return; }
+  $('setElecRate').value = (E.rate * 100).toFixed(2);
+  $('setGasRate').value = E.gas.rate.toFixed(2);
+  $('gasRateLabel').textContent = `Gas ($ per ${E.gas.unit})`;
+  draftEquip = (E.equipment || []).map(({ perHour, ...e }) => JSON.parse(JSON.stringify(e)));
+  renderEquipList();
+  $('settingsDialog').showModal();
+}
+
+async function saveSettings() {
+  readEquipForm();
+  const cents = parseFloat($('setElecRate').value);
+  const gasRate = parseFloat($('setGasRate').value);
+  $('settingsSave').disabled = true;
   try {
     const res = await fetch('/local/energy/settings', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ rate: cents / 100, gasRate, equipment: draftEquip }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.message || 'Could not save');
     E = data;
     renderEnergy();
-    toast(okMsg);
+    $('settingsDialog').close();
+    toast('Settings saved');
   } catch (err) {
     toast(err.message, true);
+  } finally {
+    $('settingsSave').disabled = false;
   }
 }
 
-async function editRate() {
-  const g = E?.gas || { rate: 2.97, unit: 'CCF', inputBtu: 264000 };
-  const elec = prompt('Electricity rate, cents per kWh (energy + delivery):', E ? (E.rate * 100).toFixed(2) : '14.00');
-  if (elec === null) return;
-  const gas = prompt(`Gas rate, dollars per ${g.unit} (all per-${g.unit} charges + taxes):`, g.rate.toFixed(2));
-  if (gas === null) return;
-  const btu = prompt('Heater input rating, BTU per hour (on the heater label, e.g. 264000):', String(g.inputBtu));
-  if (btu === null) return;
-  const cents = parseFloat(elec.replace(/[^0-9.]/g, ''));
-  const gasRate = parseFloat(gas.replace(/[^0-9.]/g, ''));
-  const inputBtu = parseFloat(btu.replace(/[^0-9.]/g, ''));
-  if (!(cents > 0 && cents < 500)) { toast('Enter an electricity rate like 15.83', true); return; }
-  await saveEnergySettings({ rate: cents / 100, gasRate, gasInputBtu: inputBtu }, 'Rates saved');
-}
+$('settingsForm').addEventListener('submit', (e) => { e.preventDefault(); saveSettings(); });
+$('equipList').addEventListener('change', (e) => {
+  if (e.target.dataset.k === 'energy' || e.target.dataset.k === 'source') { readEquipForm(); renderEquipList(); }
+});
+$('settingsDialog').addEventListener('click', (e) => {
+  const t = e.target.closest('button');
+  if (!t) return;
+  if (t.id === 'addEquip') {
+    readEquipForm();
+    draftEquip.push({ id: newEquipId(), name: '', source: null, energy: 'electric', watts: undefined });
+    renderEquipList();
+    const rows = document.querySelectorAll('#equipList .equip');
+    rows[rows.length - 1]?.querySelector('input')?.focus();
+  } else if (t.dataset.remove !== undefined) {
+    readEquipForm();
+    draftEquip.splice(parseInt(t.dataset.remove, 10), 1);
+    renderEquipList();
+  } else if (t.id === 'settingsCancel') {
+    $('settingsDialog').close();
+  }
+});
 
 // ---------- Events ----------
 document.addEventListener('click', (e) => {
@@ -689,7 +822,7 @@ document.addEventListener('click', (e) => {
   }
   if (t.dataset.schedule) return openSchedule(parseInt(t.dataset.schedule, 10));
   if (t.id === 'addSchedule') return openSchedule(null);
-  if (t.id === 'editRate') return editRate();
+  if (t.id === 'openSettings') return openSettings();
   if (t.dataset.bit) {
     draftDays ^= parseInt(t.dataset.bit, 10);
     return renderDays();

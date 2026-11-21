@@ -253,8 +253,9 @@ main {
 
 /* Energy */
 .live { display: grid; gap: 6px; margin-bottom: 12px; }
-.live-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-.live-name { width: 56px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.live-row { display: grid; grid-template-columns: minmax(0, 38%) auto 1fr; align-items: baseline; gap: 10px; }
+.live-name { font-size: 13px; font-weight: 600; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.live-row .meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .live-val { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .live-row .meta { color: var(--muted); font-size: 13px; }
 .live-row.firing .live-val { color: var(--warm); }
@@ -268,6 +269,25 @@ main {
 .etable th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 600; padding: 4px 0; }
 .etable td { padding: 6px 0; border-top: 1px solid var(--line); }
 .etable th:not(:first-child), .etable td:not(:first-child) { text-align: right; }
+
+.sheet-sub { margin: 4px 0 0; font-size: 15px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.sheet { overflow-y: auto; }
+.equip-list { display: grid; gap: 10px; margin: 10px 0; }
+.equip {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--tile);
+}
+.equip .field { margin: 0; }
+.equip .full { grid-column: 1 / -1; }
+.equip .field select, .equip .field input { background: var(--card); font-size: 16px; padding: 8px 10px; }
+.equip .remove { justify-self: start; padding: 4px 0; color: var(--bad); }
+.unit-input { display: flex; align-items: center; gap: 6px; }
+.unit-input span { color: var(--muted); font-size: 14px; white-space: nowrap; }
 
 /* Schedules */
 .schedule-list { display: grid; gap: 8px; }

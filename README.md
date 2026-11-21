@@ -10,12 +10,15 @@ and talks to it through njsPC's REST API.
 - Heat setpoint (− / +) and heat mode per body
 - Lights and aux/feature toggles (hide unused ones with **Edit**; saved per phone)
 - Filter pump status
-- **Energy**: pump electricity and gas-heater cost: live readout, today / last 7 days /
-  this month (with a full-month projection), pump cost by speed, and a daily log.
-  - Pump power is measured: needs a pump that reports watts (e.g. IntelliFlo on the EasyTouch COM port).
-  - Gas is estimated: burner hours (while the controller calls for gas heat) × heater input rating.
-    Only counts heating the EasyTouch controls (heater in remote mode).
-  - Tap **Rates** to set ¢/kWh, $ per CCF of gas, and heater BTU/hr.
+- **Energy**: electricity and gas cost: live readout, today / last 7 days / this month
+  (with a full-month projection), cost by equipment and by pump speed, and a daily log.
+  - Pump power is **measured** when the pump reports watts (e.g. IntelliFlo on the EasyTouch COM port).
+  - Other equipment is **estimated**: run time × rating. In **Energy → Settings**, add each item
+    (name, what it's counted with, electric watts or gas BTU/hr) and set your ¢/kWh and $/CCF.
+    - "Counted while" can be any circuit or feature (e.g. Air Blower), Pool/Spa mode, or
+      "Heater is firing" (while the controller calls for gas heat; heater must be in remote mode).
+    - Costs are computed from logged run time and the *current* rating, so correcting a
+      rating also corrects past days.
 - Schedules: view, add, edit, delete
 
 No dependencies and no build step: just Node.js.
@@ -63,7 +66,7 @@ cd ~/pool-remote && git pull && pm2 restart poolRemote
 | `NJSPC_URL` | `http://127.0.0.1:4200` | Where nodejs-poolController is |
 | `ENERGY_RATE` | `0.14` | Starting electricity rate in $/kWh (change it later in the app) |
 | `ENERGY_SAMPLE_MS` | `30000` | How often pump power and heater state are sampled |
-| `GAS_INPUT_BTU` | `264000` | Heater input rating, BTU/hr (Raypak Avia 264A) |
+| `GAS_INPUT_BTU` | `264000` | Starting rating of the default "Gas heater" item, BTU/hr (Raypak Avia 264A) |
 | `GAS_RATE` | `2.97` | Starting gas price per unit (change it later in the app) |
 | `GAS_UNIT` / `GAS_BTU_PER_UNIT` | `CCF` / `103700` | Gas billing unit and its energy content |
 
@@ -112,4 +115,7 @@ npm start                                       # app on :8080
 | Heater firing (energy logger) | `GET /state/temps` (body `heatStatus`) |
 
 Pool Remote's own endpoints: `GET /local/energy` (report) and
-`PUT /local/energy/settings` `{rate, gasRate, gasInputBtu}` ($/kWh, $/CCF, BTU/hr).
+`PUT /local/energy/settings` `{rate, gasRate, equipment}` where `rate` is $/kWh, `gasRate` is $/CCF and
+`equipment` is the full list: `[{id, name, source: {kind: "circuit"|"feature"|"heater", id}, energy: "electric"|"gas", watts|btu}]`.
+
+Mock with a power-reporting pump: `MOCK_INTELLIFLO=1 npm run mock`.

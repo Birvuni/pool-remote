@@ -28,15 +28,20 @@ const heatModes = [{ val: 0, name: 'off', desc: 'Off' }, { val: 1, name: 'heater
 const timeTypes = [{ val: 0, name: 'manual', desc: 'Manual' }, { val: 1, name: 'sunrise', desc: 'Sunrise' }, { val: 2, name: 'sunset', desc: 'Sunset' }];
 const schedTypes = [{ val: 0, name: 'repeat', desc: 'Repeats' }, { val: 26, name: 'runonce', desc: 'Run Once' }];
 
+// Mirrors the real EasyTouch2 4 this was built for.
 const circuits = [
   { id: 1, name: 'Spa', isOn: false, type: circuitTypes.spa },
-  { id: 2, name: 'Pool Light', isOn: false, type: circuitTypes.intellibrite },
-  { id: 3, name: 'Spa Light', isOn: false, type: circuitTypes.light },
-  { id: 4, name: 'Cleaner', isOn: false, type: circuitTypes.generic },
-  { id: 5, name: 'Waterfall', isOn: false, type: circuitTypes.generic },
+  { id: 2, name: 'Lights', isOn: false, type: circuitTypes.intellibrite },
+  { id: 3, name: 'Air Blower', isOn: false, type: circuitTypes.generic },
+  { id: 4, name: 'Water Feature', isOn: false, type: circuitTypes.generic },
+  { id: 5, name: 'AUX 4', isOn: false, type: circuitTypes.generic },
   { id: 6, name: 'Pool', isOn: true, type: circuitTypes.pool },
-  { id: 7, name: 'AUX 5', isOn: false, type: circuitTypes.notused },
+  { id: 7, name: 'Floor Cleaner', isOn: false, type: circuitTypes.generic },
 ];
+const features = [{ id: 11, name: 'Fountain', isOn: false, type: { val: 0, name: 'generic', desc: 'Generic' } }];
+const featureById = (id) => features.find((f) => f.id === id);
+// MOCK_INTELLIFLO=1 simulates a pump that reports watts/RPM; otherwise a relay-only "Two Speed" pump.
+const INTELLIFLO = process.env.MOCK_INTELLIFLO === '1';
 
 const bodies = [
   { id: 1, name: 'Pool', circuit: 6, temp: 78, setPoint: 82, isOn: true, type: { val: 0, name: 'pool', desc: 'Pool' }, heatMode: heatModes[0], heatStatus: { val: 0, name: 'off', desc: 'Off' } },
@@ -44,8 +49,8 @@ const bodies = [
 ];
 
 let schedules = [
-  { id: 1, circuit: 6, startTime: 480, endTime: 960, scheduleDays: transformDays(127), scheduleType: schedTypes[0], startTimeType: timeTypes[0], endTimeType: timeTypes[0], isOn: false, disabled: false },
-  { id: 2, circuit: 2, startTime: 0, endTime: 1320, scheduleDays: transformDays(65), scheduleType: schedTypes[0], startTimeType: timeTypes[2], endTimeType: timeTypes[0], isOn: false, disabled: false },
+  { id: 1, circuit: 6, startTime: 630, endTime: 960, scheduleDays: transformDays(127), scheduleType: schedTypes[0], startTimeType: timeTypes[0], endTimeType: timeTypes[0], isOn: false, disabled: false },
+  { id: 2, circuit: 7, startTime: 539, endTime: 960, scheduleDays: transformDays(127), scheduleType: schedTypes[0], startTimeType: timeTypes[0], endTimeType: timeTypes[0], isOn: false, disabled: false },
 ];
 
 const circuitById = (id) => circuits.find((c) => c.id === id);
@@ -75,6 +80,7 @@ function pumps() {
   const rpm = spa ? 3000 : pool ? 1800 : 0;
   const watts = rpm ? Math.round(2950 * Math.pow(rpm / 3450, 3) + 40) : 0;
   const flow = rpm ? Math.round(rpm / 40) : 0;
+  if (!INTELLIFLO) return [{ id: 1, name: 'Two Speed', type: { val: 2, name: 'ds', desc: 'Two-Speed' } }];
   return [{ id: 1, name: 'IntelliFlo VS+SVRS', type: { val: 128, name: 'vs', desc: 'Intelliflo VS' }, rpm, watts, flow }];
 }
 
@@ -89,7 +95,7 @@ function stateAll() {
     temps: { air: 64, units: { val: 0, name: 'F', desc: 'Fahrenheit' }, bodies },
     equipment: { model: 'EasyTouch2 4', controllerType: 'easytouch' },
     circuits,
-    features: [],
+    features,
     pumps: pumps(),
     schedules: schedules.map((s) => ({ ...s, circuit: circuitById(s.circuit) })),
   };
@@ -114,7 +120,12 @@ http.createServer((req, res) => {
       if (key === 'GET /state/pumps') return send(res, 200, pumps());
       if (key === 'GET /state/temps') { syncBodies(); return send(res, 200, { bodies }); }
       if (key === 'PUT /state/circuit/setState') return send(res, 200, setCircuit(parseInt(body.id, 10), !!body.isOn));
-      if (key === 'PUT /state/feature/setState') return send(res, 400, { message: 'No features' });
+      if (key === 'PUT /state/feature/setState') {
+        const ft = featureById(parseInt(body.id, 10));
+        if (!ft) return send(res, 400, { message: `Invalid feature id ${body.id}` });
+        ft.isOn = !!body.isOn;
+        return send(res, 200, ft);
+      }
       if (key === 'PUT /state/body/setPoint') {
         const b = bodies.find((x) => x.id === parseInt(body.id, 10));
         b.setPoint = parseInt(body.setPoint, 10);
@@ -134,7 +145,7 @@ http.createServer((req, res) => {
           scheduleDays: days.map((d) => ({ ...d, bitval: d.val })),
           scheduleTypes: schedTypes,
           scheduleTimeTypes: timeTypes,
-          circuits: circuits.filter((c) => c.type.name !== 'notused').map((c) => ({ id: c.id, name: c.name })),
+          circuits: circuits.filter((c) => c.type.name !== 'notused').map((c) => ({ id: c.id, name: c.name })).concat(features.map((x) => ({ id: x.id, name: x.name }))),
         });
       }
       if (key === 'PUT /config/schedule') {

@@ -1,9 +1,11 @@
-// Energy logger: pump electricity and gas-heater usage.
+// Energy logger.
 //
-// Every SAMPLE_MS it reads nodejs-poolController for:
-//   - pump power (watts/RPM/flow) -> kWh
-//   - whether the controller is calling for gas heat -> burner hours -> gas used (fixed-input heater)
-// and keeps daily totals in data/energy.json.
+// Every SAMPLE_MS it reads nodejs-poolController (/state/all) and records:
+//   - measured pump power (watts/RPM from pumps that report it, e.g. IntelliFlo) -> kWh
+//   - run time of each configured equipment item while its linked circuit/feature is on
+//     (or, for the "heater" source, while the controller is calling for gas heat)
+// Daily totals live in data/energy.json. Equipment energy/cost is computed from run time
+// and the item's current rating, so fixing a wrong rating also corrects past days.
 
 const http = require('http');
 const fs = require('fs');
@@ -16,35 +18,56 @@ const SAVE_MS = 5 * 60 * 1000;
 const MAX_GAP_MS = 3 * 60 * 1000; // don't count time across gaps longer than this (Pi or njsPC was down)
 const KEEP_DAYS = 400;
 const RPM_BUCKET = 50;
+const MAX_EQUIPMENT = 30;
 // heatStatus names that mean a gas heater is firing (not solar or a heat pump).
 const GAS_HEAT_STATUSES = new Set(['heater', 'mtheater', 'hybheat']);
 
 let store = load();
-let last = null; // previous sample: { at, watts, rpm, heating }
-let live = { watts: 0, rpm: 0, flow: 0, heating: false, at: null, ok: false, pumps: 0 };
+let last = null; // previous sample: { at, watts, rpm, on: { [equipId]: true } }
+let live = { watts: 0, rpm: 0, flow: 0, on: {}, at: null, ok: false, pumps: 0 };
 let dirty = false;
 
-function defaultGas() {
-  return {
-    inputBtu: parseFloat(process.env.GAS_INPUT_BTU || '264000'), // heater input rating, BTU/hr
-    btuPerUnit: parseFloat(process.env.GAS_BTU_PER_UNIT || '103700'), // BTU in one billing unit (1 CCF ≈ 103,700 BTU)
-    unit: process.env.GAS_UNIT || 'CCF',
-    rate: parseFloat(process.env.GAS_RATE || '2.97'), // $ per billing unit
-  };
+function defaultHeater(btu) {
+  return { id: 'heater', name: 'Gas heater', source: { kind: 'heater' }, energy: 'gas', btu };
 }
 
 function defaultStore() {
-  return { version: 2, rate: parseFloat(process.env.ENERGY_RATE || '0.14'), gas: defaultGas(), days: {} };
+  return {
+    version: 3,
+    rate: parseFloat(process.env.ENERGY_RATE || '0.14'),
+    gas: {
+      rate: parseFloat(process.env.GAS_RATE || '2.97'), // $ per billing unit
+      unit: process.env.GAS_UNIT || 'CCF',
+      btuPerUnit: parseFloat(process.env.GAS_BTU_PER_UNIT || '103700'), // 1 CCF ≈ 103,700 BTU
+    },
+    equipment: [defaultHeater(parseFloat(process.env.GAS_INPUT_BTU || '264000'))],
+    days: {},
+  };
+}
+
+// Upgrade older files: v1 (pump only) and v2 (pump + fixed heater with heatSeconds).
+function migrate(s) {
+  const d = defaultStore();
+  s.gas = { ...d.gas, ...(s.gas || {}) };
+  if (!Array.isArray(s.equipment)) {
+    s.equipment = [defaultHeater(s.gas.inputBtu || d.equipment[0].btu)];
+  }
+  delete s.gas.inputBtu;
+  for (const day of Object.values(s.days)) {
+    if (day.heatSeconds) {
+      day.equip = day.equip || {};
+      day.equip.heater = (day.equip.heater || 0) + day.heatSeconds;
+    }
+    delete day.heatSeconds;
+  }
+  s.version = 3;
+  return s;
 }
 
 function load() {
   try {
     const s = JSON.parse(fs.readFileSync(FILE, 'utf8'));
-    if (s && typeof s.days === 'object') {
-      s.gas = { ...defaultGas(), ...(s.gas || {}) }; // upgrade v1 files
-      s.version = 2;
-      return s;
-    }
+    if (s && typeof s.days === 'object') return migrate(s);
   } catch { /* first run or unreadable file */ }
   return defaultStore();
 }
@@ -74,7 +97,7 @@ function getDay(key) {
   d.runSeconds ??= 0;
   d.maxWatts ??= 0;
   d.bySpeed ??= {};
-  d.heatSeconds ??= 0;
+  d.equip ??= {};
   return d;
 }
 
@@ -83,16 +106,18 @@ function prune() {
   while (keys.length > KEEP_DAYS) delete store.days[keys.shift()];
 }
 
-// Add usage for [from, to] with constant pump power and heater state, splitting at midnight.
-function accumulate(from, to, watts, rpm, heating = false) {
+// Add usage for [from, to] assuming the sample's values held the whole time; splits at midnight.
+// sample = { watts, rpm, on: { [equipId]: true } }
+function accumulate(from, to, sample) {
+  const { watts = 0, rpm = 0, on = {} } = sample;
   let t = from;
   while (t < to) {
     const d = new Date(t);
     const midnight = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime();
     const end = Math.min(to, midnight);
     const seconds = (end - t) / 1000;
-    const kWh = (watts * seconds) / 3.6e6;
     const day = getDay(dayKey(t));
+    const kWh = (watts * seconds) / 3.6e6;
     day.kWh += kWh;
     if (watts > 0) {
       day.runSeconds += seconds;
@@ -102,7 +127,9 @@ function accumulate(from, to, watts, rpm, heating = false) {
       b.kWh += kWh;
       b.seconds += seconds;
     }
-    if (heating) day.heatSeconds += seconds;
+    for (const id of Object.keys(on)) {
+      if (on[id]) day.equip[id] = (day.equip[id] || 0) + seconds;
+    }
     t = end;
   }
   dirty = true;
@@ -126,45 +153,82 @@ function getJson(njspcUrl, urlPath) {
   });
 }
 
+// Which equipment items are running, given a /state/all snapshot.
+function equipmentOn(state) {
+  const on = {};
+  const heating = (state?.temps?.bodies || []).some((b) => GAS_HEAT_STATUSES.has((b?.heatStatus?.name || '').toLowerCase()));
+  const isOn = (list, id) => !!(list || []).find((x) => x && x.id === id)?.isOn;
+  for (const e of store.equipment) {
+    const src = e.source || {};
+    let running = false;
+    if (src.kind === 'heater') running = heating;
+    else if (src.kind === 'circuit') running = isOn(state.circuits, src.id);
+    else if (src.kind === 'feature') running = isOn(state.features, src.id);
+    if (running) on[e.id] = true;
+  }
+  return on;
+}
+
 async function sample(njspcUrl) {
   const now = Date.now();
   try {
-    const [pumpList, temps] = await Promise.all([getJson(njspcUrl, '/state/pumps'), getJson(njspcUrl, '/state/temps')]);
-    const pumps = (Array.isArray(pumpList) ? pumpList : []).filter((p) => p && p.id);
-    let watts = 0, rpm = 0, flow = 0;
+    const state = await getJson(njspcUrl, '/state/all');
+    const pumps = (Array.isArray(state.pumps) ? state.pumps : []).filter((p) => p && p.id);
+    let watts = 0, rpm = 0, flow = 0, reporting = 0;
     for (const p of pumps) {
+      if (typeof p.watts === 'number') reporting++;
       if (typeof p.watts === 'number' && p.watts > 0) watts += p.watts;
       if (typeof p.rpm === 'number') rpm = Math.max(rpm, p.rpm);
       if (typeof p.flow === 'number') flow = Math.max(flow, p.flow);
     }
-    const heating = (temps?.bodies || []).some((b) => GAS_HEAT_STATUSES.has((b?.heatStatus?.name || '').toLowerCase()));
-    // Values are assumed constant since the previous sample (step integration).
-    if (last && now - last.at <= MAX_GAP_MS) accumulate(last.at, now, last.watts, last.rpm, last.heating);
-    last = { at: now, watts, rpm, heating };
-    live = { watts, rpm, flow, heating, at: new Date(now).toISOString(), ok: true, pumps: pumps.length };
+    const on = equipmentOn(state);
+    if (last && now - last.at <= MAX_GAP_MS) accumulate(last.at, now, last);
+    last = { at: now, watts, rpm, on };
+    live = { watts, rpm, flow, on, at: new Date(now).toISOString(), ok: true, pumps: reporting };
   } catch (err) {
     last = null;
     live = { ...live, ok: false, error: err.message };
   }
 }
 
-function gasUnits(heatSeconds) {
-  return (store.gas.inputBtu * (heatSeconds / 3600)) / store.gas.btuPerUnit;
+// Hourly energy and cost of one equipment item at its rating.
+function itemPerHour(e) {
+  if (e.energy === 'gas') {
+    const units = e.btu / store.gas.btuPerUnit;
+    return { gasUnits: units, kWh: 0, cost: units * store.gas.rate };
+  }
+  const kWh = e.watts / 1000;
+  return { gasUnits: 0, kWh, cost: kWh * store.rate };
 }
 
 function summarize(keys) {
-  const out = { kWh: 0, runSeconds: 0, heatSeconds: 0 };
+  const out = { pumpKWh: 0, runSeconds: 0, items: {} };
+  for (const e of store.equipment) out.items[e.id] = { seconds: 0 };
   for (const k of keys) {
     const d = store.days[k];
     if (!d) continue;
-    out.kWh += d.kWh || 0;
+    out.pumpKWh += d.kWh || 0;
     out.runSeconds += d.runSeconds || 0;
-    out.heatSeconds += d.heatSeconds || 0;
+    for (const [id, s] of Object.entries(d.equip || {})) {
+      if (out.items[id]) out.items[id].seconds += s;
+    }
   }
-  out.cost = out.kWh * store.rate;
-  out.gas = gasUnits(out.heatSeconds);
-  out.gasCost = out.gas * store.gas.rate;
-  out.totalCost = out.cost + out.gasCost;
+  out.pumpCost = out.pumpKWh * store.rate;
+  out.elecCost = out.pumpCost;
+  out.kWh = out.pumpKWh;
+  out.gasUnits = 0;
+  out.gasCost = 0;
+  for (const e of store.equipment) {
+    const it = out.items[e.id];
+    const ph = itemPerHour(e);
+    const h = it.seconds / 3600;
+    it.kWh = ph.kWh * h;
+    it.gasUnits = ph.gasUnits * h;
+    it.cost = ph.cost * h;
+    if (e.energy === 'gas') { out.gasUnits += it.gasUnits; out.gasCost += it.cost; }
+    else { out.kWh += it.kWh; out.elecCost += it.cost; }
+  }
+  out.totalCost = out.elecCost + out.gasCost;
   return out;
 }
 
@@ -182,8 +246,7 @@ function report() {
   let projected = null;
   if (completed.length) {
     const c = summarize(completed);
-    projected = { cost: (c.cost / completed.length) * daysInMonth, gasCost: (c.gasCost / completed.length) * daysInMonth };
-    projected.totalCost = projected.cost + projected.gasCost;
+    projected = { totalCost: (c.totalCost / completed.length) * daysInMonth };
   }
 
   const bySpeed = {};
@@ -197,14 +260,15 @@ function report() {
     }
   }
 
-  const g = store.gas;
   return {
     rate: store.rate,
-    gas: { ...g, unitsPerHour: g.inputBtu / g.btuPerUnit, costPerHour: (g.inputBtu / g.btuPerUnit) * g.rate },
+    gas: { ...store.gas },
+    equipment: store.equipment.map((e) => ({ ...e, perHour: itemPerHour(e) })),
     live,
     today: summarize([today]),
     week: summarize(lastNDays(7)),
     month: { ...month, projected },
+    last30: summarize(lastNDays(30)),
     days: lastNDays(14).map((k) => ({ date: k, ...summarize([k]) })),
     bySpeed: Object.values(bySpeed)
       .map((s) => ({ ...s, cost: s.kWh * store.rate, avgWatts: s.seconds ? (s.kWh * 3.6e6) / s.seconds : 0 }))
@@ -213,16 +277,58 @@ function report() {
   };
 }
 
-// Update rates/settings. rate: $/kWh; gasRate: $ per gas unit; gasInputBtu: heater BTU/hr.
-function setSettings({ rate, gasRate, gasInputBtu } = {}) {
+function validEquipment(list) {
+  if (!Array.isArray(list)) throw new Error('Equipment must be a list');
+  if (list.length > MAX_EQUIPMENT) throw new Error(`At most ${MAX_EQUIPMENT} equipment items`);
+  const seen = new Set();
+  return list.map((raw, i) => {
+    const where = `Equipment #${i + 1}`;
+    const id = String(raw.id || '');
+    if (!/^[a-z0-9-]{1,40}$/.test(id) || seen.has(id)) throw new Error(`${where}: bad or duplicate id`);
+    seen.add(id);
+    const name = String(raw.name || '').trim().slice(0, 40);
+    if (!name) throw new Error(`${where}: name is required`);
+    const kind = raw.source?.kind;
+    if (!['heater', 'circuit', 'feature'].includes(kind)) throw new Error(`${name}: pick what turns it on`);
+    const source = { kind };
+    if (kind !== 'heater') {
+      source.id = parseInt(raw.source.id, 10);
+      if (!(source.id > 0)) throw new Error(`${name}: pick a circuit`);
+    }
+    if (raw.energy === 'gas') {
+      const btu = Number(raw.btu);
+      if (!(btu >= 1000 && btu <= 2000000)) throw new Error(`${name}: gas rating must be 1,000–2,000,000 BTU/hr`);
+      return { id, name, source, energy: 'gas', btu };
+    }
+    const watts = Number(raw.watts);
+    if (!(watts > 0 && watts <= 20000)) throw new Error(`${name}: power must be 1–20,000 W`);
+    return { id, name, source, energy: 'electric', watts };
+  });
+}
+
+// Update settings. rate: $/kWh; gasRate: $ per gas unit; equipment: full list.
+// gasInputBtu (older clients) updates the heater item's rating.
+function setSettings({ rate, gasRate, equipment, gasInputBtu } = {}) {
   const num = (v) => (v === undefined || v === null || v === '' ? undefined : Number(v));
   rate = num(rate); gasRate = num(gasRate); gasInputBtu = num(gasInputBtu);
   if (rate !== undefined && !(rate > 0 && rate <= 5)) throw new Error('Electricity rate must be in dollars per kWh, e.g. 0.1583');
   if (gasRate !== undefined && !(gasRate > 0 && gasRate <= 50)) throw new Error(`Gas rate must be in dollars per ${store.gas.unit}, e.g. 2.97`);
-  if (gasInputBtu !== undefined && !(gasInputBtu >= 10000 && gasInputBtu <= 2000000)) throw new Error('Heater input must be in BTU/hr, e.g. 264000');
+  const eq = equipment !== undefined ? validEquipment(equipment) : undefined;
+  if (gasInputBtu !== undefined && !(gasInputBtu >= 1000 && gasInputBtu <= 2000000)) throw new Error('Heater input must be in BTU/hr, e.g. 264000');
   if (rate !== undefined) store.rate = rate;
   if (gasRate !== undefined) store.gas.rate = gasRate;
-  if (gasInputBtu !== undefined) store.gas.inputBtu = gasInputBtu;
+  if (eq !== undefined) store.equipment = eq;
+  if (gasInputBtu !== undefined) {
+    const h = store.equipment.find((e) => e.source?.kind === 'heater');
+    if (h) h.btu = gasInputBtu;
+  }
+  // Credit time up to now under the old list, then keep running state only for items that still exist.
+  if (last) {
+    const now = Date.now();
+    if (now - last.at <= MAX_GAP_MS) accumulate(last.at, now, last);
+    const ids = new Set(store.equipment.map((e) => e.id));
+    last = { ...last, at: now, on: Object.fromEntries(Object.entries(last.on).filter(([id]) => ids.has(id))) };
+  }
   dirty = true;
   save();
 }
@@ -234,7 +340,7 @@ function start(njspcUrl) {
   setInterval(() => sample(njspcUrl), SAMPLE_MS);
   setInterval(() => { prune(); save(); }, SAVE_MS);
   const flush = () => {
-    if (last) accumulate(last.at, Date.now(), last.watts, last.rpm, last.heating);
+    if (last) accumulate(last.at, Date.now(), last);
     last = null;
     save();
     process.exit(0);
@@ -243,4 +349,4 @@ function start(njspcUrl) {
   process.on('SIGTERM', flush);
 }
 
-module.exports = { start, report, setRate, setSettings, _test: { accumulate, dayKey, getStore: () => store, summarize } };
+module.exports = { start, report, setRate, setSettings, _test: { accumulate, dayKey, getStore: () => store, summarize, equipmentOn } };
