@@ -7,6 +7,10 @@ Every change to Pool Remote gets a release version, shown at the bottom of the a
 cd ~/pool-remote && git pull && pm2 restart poolRemote
 ```
 
+## 1.6.1 — 2026-11-21
+- Panel settings → Custom names: collapsed by default, explains what it's for, and shows the
+  factory placeholders ("USERNAME-01"…) as unused.
+
 ## 1.6.0 — 2026-11-21
 - **Water and air temperature together** in the top card (air moved out of the title bar).
 - **"Now" summary** in the same card: mode, pumps (IntelliFlo RPM and watts, plus running

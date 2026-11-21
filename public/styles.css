@@ -373,6 +373,12 @@ a.link-btn { text-decoration: none; }
   border: 1px solid var(--line); background: var(--tile); color: var(--text);
 }
 .speed-row .remove { padding: 4px; }
+.names-details summary { display: flex; align-items: baseline; gap: 10px; cursor: pointer; list-style: none; }
+.names-details summary::-webkit-details-marker { display: none; }
+.names-details summary::after { content: "Show"; margin-left: auto; color: var(--accent); font-weight: 600; font-size: 15px; }
+.names-details[open] summary::after { content: "Hide"; }
+.names-details summary h3 { margin: 0; }
+.names-details summary .meta { font-size: 13px; color: var(--muted); }
 .names-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .name-row { display: flex; align-items: center; gap: 6px; }
 .name-row span { width: 18px; font-size: 12px; color: var(--muted); text-align: right; }

@@ -257,21 +257,32 @@ function namesSection() {
   if (o._error) return `<section class="pset"><h3>Custom names</h3>${sectionError(o)}</section>`;
   // poolController numbers custom names from 0 (name #0 is list entry 200); show them 1-based.
   const list = [...(o.customNames || [])].sort((a, b) => a.id - b.id);
+  // Factory placeholders ("USERNAME-01"…) mean the slot is unused: show them empty.
   const rows = list.map((n, i) => `<label class="name-row"><span>${i + 1}</span>
-      <input type="text" maxlength="11" data-custom-name="${n.id}" value="${esc(n.name || '')}" placeholder="(empty)"></label>`);
+      <input type="text" maxlength="11" data-custom-name="${n.id}" value="${esc(customNameValue(n.name))}" placeholder="unused"></label>`);
   if (!rows.length) return `<section class="pset"><h3>Custom names</h3><p class="empty">This panel has no custom names.</p></section>`;
+  const used = list.filter((n) => customNameValue(n.name)).length;
   return `
     <section class="pset">
-      <h3>Custom names</h3>
-      <p class="hint">Your own names (up to 11 characters) that you can then pick for any circuit or feature.</p>
-      <div class="names-grid">${rows.join('')}</div>
-      <div class="pset-actions"><span></span><button type="button" class="btn primary" id="saveNames">Save names</button></div>
+      <details class="names-details" ${used ? 'open' : ''}>
+        <summary><h3>Custom names</h3><span class="meta">${used ? `${used} in use` : 'all unused · optional'}</span></summary>
+        <p class="hint">Circuit names can only be picked from the EasyTouch's built-in list (Pool, Spa, Air Blower…).
+          To use a name that isn't on it, type it here (up to 11 characters), tap <b>Save names</b>, then open that
+          circuit above and pick it under <b>Name</b>. Example: type "BUG ZAPPER", then set AUX 4's name to it.</p>
+        <div class="names-grid">${rows.join('')}</div>
+        <div class="pset-actions"><span></span><button type="button" class="btn primary" id="saveNames">Save names</button></div>
+      </details>
     </section>`;
+}
+
+// "USERNAME-01" etc. are the EasyTouch's factory placeholders for unused slots.
+function customNameValue(name) {
+  return /^USERNAME-\d+$/i.test(name || '') ? '' : (name || '');
 }
 
 async function saveNames() {
   const o = PANEL.opts.names;
-  const byId = new Map((o.customNames || []).map((n) => [n.id, n.name || '']));
+  const byId = new Map((o.customNames || []).map((n) => [n.id, customNameValue(n.name)]));
   const changed = [...document.querySelectorAll('[data-custom-name]')]
     .map((i) => ({ id: parseInt(i.dataset.customName, 10), name: i.value.trim() }))
     .filter((n) => n.name !== (byId.get(n.id) || '').trim());
