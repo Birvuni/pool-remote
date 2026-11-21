@@ -7,6 +7,9 @@ Every change to Pool Remote gets a release version, shown at the bottom of the a
 cd ~/pool-remote && git pull && pm2 restart poolRemote
 ```
 
+## 1.5.1 — 2026-11-21
+- Panel settings: egg timers under an hour read "59 min" instead of "0 h 59 min".
+
 ## 1.5.0 — 2026-11-21
 - **Pi health strip** at the top: CPU, temperature, memory, Wi-Fi signal, with warnings for
   heat, weak Wi-Fi, a full disk, and power-supply under-voltage. Tap it for details.

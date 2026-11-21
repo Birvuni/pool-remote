@@ -158,7 +158,9 @@ function eggText(c) {
   if (c.dontStop) return "Doesn't stop";
   const m = c.eggTimer || EGG_DEFAULT;
   if (m === EGG_DEFAULT) return null;
-  return m % 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m / 60} h`;
+  const h = Math.floor(m / 60), min = m % 60;
+  if (!min) return `${h} h`;
+  return h ? `${h} h ${min} min` : `${min} min`;
 }
 
 function circuitRows(kind) {
