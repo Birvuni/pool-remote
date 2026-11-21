@@ -119,3 +119,14 @@ Pool Remote's own endpoints: `GET /local/energy` (report) and
 `equipment` is the full list: `[{id, name, source: {kind: "circuit"|"feature"|"heater", id}, energy: "electric"|"gas", watts|btu}]`.
 
 Mock with a power-reporting pump: `MOCK_INTELLIFLO=1 npm run mock`.
+
+## Troubleshooting: IntelliFlo not showing up (EasyTouch/IntelliTouch)
+
+`node dev/bus-check.js` records the RS-485 bus for 2 minutes and reports whether a pump is
+talking and what pump setup the controller reports.
+
+If the pump is on the bus and the controller reports it, but poolController (10.1.0) still lists
+only a "Two Speed" pump, it's a poolController bug: with a Two-Speed pump defined, the IntelliFlo
+is created as pump id 2 and then deleted when the controller reports "pump slot 2: none".
+`node dev/patch-njspc-pump.js` patches it (with a backup; `--revert` undoes it), then
+`pm2 restart poolController`. Re-run the patch after updating nodejs-poolController.
