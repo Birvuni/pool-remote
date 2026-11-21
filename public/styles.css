@@ -320,7 +320,11 @@ a.link-btn { text-decoration: none; }
 .update-text span { color: var(--muted); font-size: 13px; }
 .update-notes { grid-column: 1 / -1; font-size: 13px; }
 .update-notes summary { cursor: pointer; color: var(--accent); font-weight: 600; }
-.update-notes pre { white-space: pre-wrap; font: inherit; margin: 6px 0 0; color: var(--text); }
+.update-notes .notes { margin-top: 6px; color: var(--text); }
+.update-notes h4 { margin: 8px 0 2px; font-size: 14px; }
+.update-notes ul { margin: 0; padding-left: 18px; }
+.update-notes li { margin: 2px 0; }
+.update-notes code { font-size: 12px; }
 .link-btn.small { font-size: 12px; padding: 0; font-weight: 600; }
 
 /* Pi health strip */

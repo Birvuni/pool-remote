@@ -956,8 +956,28 @@ function renderUpdate() {
   if (!show) return;
   $('updateTitle').textContent = `Pool Remote v${u.latest} is available`;
   $('updateSub').textContent = `You have v${u.current}. Updating takes about 10 seconds.`;
-  $('updateNotes').textContent = u.notes || 'No release notes.';
+  $('updateNotes').innerHTML = notesHtml(u.notes || 'No release notes.');
   $('updateNotesBox').hidden = !u.notes;
+}
+
+// Changelog markdown -> simple HTML (escaped first; only headings, bullets, **bold**, `code`).
+function notesHtml(md) {
+  const inline = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/`([^`]+)`/g, '<code>$1</code>');
+  const out = [];
+  let list = false;
+  for (const raw of md.split('\n')) {
+    const line = raw.trimEnd();
+    const h = /^##\s+(.*)$/.exec(line);
+    const li = /^-\s+(.*)$/.exec(line);
+    const cont = /^\s{2,}\S/.test(raw) && list;
+    if (cont) { out[out.length - 1] = out[out.length - 1].replace(/<\/li>$/, ' ' + inline(line.trim()) + '</li>'); continue; }
+    if (list && !li) { out.push('</ul>'); list = false; }
+    if (h) out.push(`<h4>${inline(h[1])}</h4>`);
+    else if (li) { if (!list) { out.push('<ul>'); list = true; } out.push(`<li>${inline(li[1])}</li>`); }
+    else if (line) out.push(`<p>${inline(line)}</p>`);
+  }
+  if (list) out.push('</ul>');
+  return out.join('');
 }
 
 async function updateNow() {
