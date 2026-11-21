@@ -314,7 +314,11 @@ function renderTiles(group) {
 }
 
 function renderPumps() {
-  const pumps = (S.pumps || []).filter((p) => p && p.id);
+  const reports = (p) => typeof p.rpm === 'number' || typeof p.watts === 'number';
+  let pumps = (S.pumps || []).filter((p) => p && p.id);
+  // When a pump reports speed/power (e.g. IntelliFlo), hide relay-only entries like the
+  // EasyTouch's "Two Speed" setting: they don't add information and look like a second pump.
+  if (pumps.some(reports)) pumps = pumps.filter(reports);
   const anyBodyOn = bodies().some((b) => b.isOn);
   if (pumps.length === 0) {
     const on = bodies().find((b) => b.isOn);

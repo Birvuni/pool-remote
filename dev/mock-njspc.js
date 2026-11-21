@@ -81,8 +81,11 @@ function pumps() {
   const rpm = spa ? 3000 : pool ? 1800 : 0;
   const watts = rpm ? Math.round(2950 * Math.pow(rpm / 3450, 3) + 40) : 0;
   const flow = rpm ? Math.round(rpm / 40) : 0;
-  if (!INTELLIFLO) return [{ id: 1, name: 'Two Speed', type: { val: 2, name: 'ds', desc: 'Two-Speed' } }];
-  return [{ id: 1, name: 'IntelliFlo VS+SVRS', type: { val: 128, name: 'vs', desc: 'Intelliflo VS' }, rpm, watts, flow }];
+  // Like the real system: the EasyTouch's relay-only "Two Speed" entry (id 10) is always present,
+  // and the IntelliFlo shows up as pump 2 (once poolController is patched).
+  const twoSpeed = { id: 10, name: 'Two Speed', type: { val: 65, name: 'ds', desc: 'Two-Speed' } };
+  if (!INTELLIFLO) return [twoSpeed];
+  return [twoSpeed, { id: 2, name: 'Intelliflo VS', type: { val: 128, name: 'vs', desc: 'Intelliflo VS' }, rpm, watts, flow }];
 }
 
 function stateAll() {
