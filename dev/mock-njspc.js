@@ -1,3 +1,4 @@
+const fs = require('fs');
 // A tiny fake nodejs-poolController for developing Pool Remote without real hardware.
 // Mimics an EasyTouch with a shared pool/spa body. Run: node dev/mock-njspc.js (port 4200)
 
@@ -106,6 +107,26 @@ function send(res, status, data) {
   res.end(JSON.stringify(data));
 }
 
+// Fake packet log (for dev/bus-check.js). When packet logging is on, writes poolController-style
+// packet lines to MOCK_LOG every 2 s: pump traffic only if MOCK_INTELLIFLO=1.
+const MOCK_LOG = process.env.MOCK_LOG;
+let packetLogging = false;
+function pktLine(header, payload) {
+  const ts = new Date().toISOString();
+  return `${ts} info: {"port":0,"id":1,"valid":true,"dir":"in","proto":"broadcast","pkt":[[],[255,0,255],${JSON.stringify(header)},${JSON.stringify(payload)},[1,0]],"ts":"${ts}"}\n`;
+}
+setInterval(() => {
+  if (!packetLogging || !MOCK_LOG) return;
+  let out = pktLine([165, 1, 15, 16, 2, 29], new Array(29).fill(0));
+  if (INTELLIFLO) {
+    const p = pumps()[0];
+    out += pktLine([165, 0, 96, 16, 1, 4], [2, 196, 7, 8]);
+    out += pktLine([165, 0, 16, 96, 7, 15], [10, 2, 2, p.watts >> 8, p.watts & 255, p.rpm >> 8, p.rpm & 255, 0, 0, 0, 0, 0, 1, 2, 3]);
+  }
+  out += pktLine([165, 1, 15, 16, 24, 31], [1, INTELLIFLO ? 169 : 0].concat(new Array(29).fill(0)));
+  fs.appendFileSync(MOCK_LOG, out);
+}, 2000);
+
 http.createServer((req, res) => {
   let raw = '';
   req.on('data', (c) => { raw += c; });
@@ -117,6 +138,9 @@ http.createServer((req, res) => {
     console.log(key, raw);
     try {
       if (key === 'GET /state/all') return send(res, 200, stateAll());
+      if (key === 'GET /app/options/logger') return send(res, 200, { packet: { enabled: packetLogging, logToConsole: packetLogging } });
+      if (key === 'PUT /app/logger/setOptions') { packetLogging = !!body?.packet?.logToConsole; return send(res, 200, {}); }
+      if (key === 'PUT /app/config/reload') return send(res, 200, {});
       if (key === 'GET /state/pumps') return send(res, 200, pumps());
       if (key === 'GET /state/temps') { syncBodies(); return send(res, 200, { bodies }); }
       if (key === 'PUT /state/circuit/setState') return send(res, 200, setCircuit(parseInt(body.id, 10), !!body.isOn));
