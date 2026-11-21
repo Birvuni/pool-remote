@@ -22,13 +22,24 @@ const MAX_EQUIPMENT = 30;
 // heatStatus names that mean a gas heater is firing (not solar or a heat pump).
 const GAS_HEAT_STATUSES = new Set(['heater', 'mtheater', 'hybheat']);
 
+const CATEGORIES = ['pump', 'heater', 'other'];
+
+// Category for items saved before categories existed.
+function inferCategory(e) {
+  if (e.source?.kind === 'heater' || e.energy === 'gas') return 'heater';
+  return /pump/i.test(e.name || '') ? 'pump' : 'other';
+}
+
 let store = load();
 let last = null; // previous sample: { at, watts, rpm, on: { [equipId]: true } }
 let live = { watts: 0, rpm: 0, flow: 0, on: {}, at: null, ok: false, pumps: 0 };
 let dirty = false;
+let njspc = null;        // poolController URL, set by start()
+let sampling = null;     // in-flight sample (so concurrent requests share one)
+
 
 function defaultHeater(btu) {
-  return { id: 'heater', name: 'Gas heater', source: { kind: 'heater' }, energy: 'gas', btu };
+  return { id: 'heater', name: 'Gas heater', source: { kind: 'heater' }, energy: 'gas', btu, category: 'heater' };
 }
 
 function defaultStore() {
@@ -53,6 +64,7 @@ function migrate(s) {
     s.equipment = [defaultHeater(s.gas.inputBtu || d.equipment[0].btu)];
   }
   delete s.gas.inputBtu;
+  for (const e of s.equipment) if (!CATEGORIES.includes(e.category)) e.category = inferCategory(e);
   for (const day of Object.values(s.days)) {
     if (day.heatSeconds) {
       day.equip = day.equip || {};
@@ -65,11 +77,19 @@ function migrate(s) {
 }
 
 function load() {
+  let raw;
+  try { raw = fs.readFileSync(FILE, 'utf8'); } catch { return defaultStore(); } // first run
   try {
-    const s = JSON.parse(fs.readFileSync(FILE, 'utf8'));
+    const s = JSON.parse(raw);
     if (s && typeof s.days === 'object') return migrate(s);
-  } catch { /* first run or unreadable file */ }
-  return defaultStore();
+    throw new Error('unexpected file format');
+  } catch (err) {
+    // Keep the unreadable file instead of overwriting it with an empty history on the next save.
+    const keep = `${FILE}.unreadable-${Date.now()}`;
+    try { fs.copyFileSync(FILE, keep); } catch { /* best effort */ }
+    console.error(`energy: could not load ${FILE} (${err.message}); saved a copy as ${keep} and started fresh`);
+    return defaultStore();
+  }
 }
 
 function save() {
@@ -288,6 +308,7 @@ function validEquipment(list) {
     if (!/^[a-z0-9-]{1,40}$/.test(id) || seen.has(id)) throw new Error(`${where}: bad or duplicate id`);
     seen.add(id);
     const name = String(raw.name || '').trim().slice(0, 40);
+    const category = CATEGORIES.includes(raw.category) ? raw.category : inferCategory({ ...raw, name });
     if (!name) throw new Error(`${where}: name is required`);
     const kind = raw.source?.kind;
     if (!['heater', 'circuit', 'feature'].includes(kind)) throw new Error(`${name}: pick what turns it on`);
@@ -299,11 +320,11 @@ function validEquipment(list) {
     if (raw.energy === 'gas') {
       const btu = Number(raw.btu);
       if (!(btu >= 1000 && btu <= 2000000)) throw new Error(`${name}: gas rating must be 1,000–2,000,000 BTU/hr`);
-      return { id, name, source, energy: 'gas', btu };
+      return { id, name, source, energy: 'gas', btu, category };
     }
     const watts = Number(raw.watts);
     if (!(watts > 0 && watts <= 20000)) throw new Error(`${name}: power must be 1–20,000 W`);
-    return { id, name, source, energy: 'electric', watts };
+    return { id, name, source, energy: 'electric', watts, category };
   });
 }
 
@@ -336,7 +357,81 @@ function setSettings({ rate, gasRate, equipment, gasInputBtu } = {}) {
 
 function setRate(rate) { setSettings({ rate }); }
 
+// Take a new reading now. Background refreshes are throttled to one every 2 s; force (used right
+// after equipment was switched) always takes a new one, after any reading already in progress.
+async function freshSample(force = false) {
+  if (!njspc) return;
+  if (sampling) {
+    await sampling;
+    if (!force) return;
+  }
+  if (!force && last && Date.now() - last.at < 2000) return;
+  sampling = sample(njspc).finally(() => { sampling = null; });
+  return sampling;
+}
+
+// Usage per day or per month for the analytics page.
+// range: '7d' | '30d' | 'month' | '12m'
+function history(range = '30d') {
+  const now = new Date();
+  const day = (y, m, d) => dayKey(new Date(y, m, d).getTime());
+  let buckets = [];
+  if (range === '12m') {
+    for (let i = 11; i >= 0; i--) {
+      const first = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const prefix = dayKey(first.getTime()).slice(0, 7);
+      buckets.push({ key: prefix, label: first.toLocaleString('en-US', { month: 'short', year: '2-digit' }),
+        days: Object.keys(store.days).filter((k) => k.startsWith(prefix)) });
+    }
+  } else {
+    const n = range === '7d' ? 7 : range === 'month' ? now.getDate() : 30;
+    const start = range === 'month' ? 1 : now.getDate() - n + 1;
+    for (let i = 0; i < n; i++) {
+      const k = day(now.getFullYear(), now.getMonth(), start + i);
+      buckets.push({ key: k, label: k, days: [k] });
+    }
+  }
+  const allKeys = buckets.flatMap((b) => b.days);
+  const total = summarize(allKeys);
+  const series = [];
+  if (total.pumpKWh > 0) series.push({ id: 'pump-measured', name: 'Pump (measured)', category: 'pump', energy: 'electric' });
+  for (const e of store.equipment) series.push({ id: e.id, name: e.name, category: e.category, energy: e.energy });
+  const pick = (sum, id) => (id === 'pump-measured'
+    ? { cost: sum.pumpCost, seconds: sum.runSeconds, kWh: sum.pumpKWh, gasUnits: 0 }
+    : { cost: sum.items[id].cost, seconds: sum.items[id].seconds, kWh: sum.items[id].kWh, gasUnits: sum.items[id].gasUnits });
+  const rows = buckets.map((b) => {
+    const sum = summarize(b.days);
+    return {
+      key: b.key, label: b.label, hasData: b.days.some((k) => store.days[k]),
+      totalCost: sum.totalCost, elecCost: sum.elecCost, gasCost: sum.gasCost, kWh: sum.kWh, gasUnits: sum.gasUnits,
+      values: Object.fromEntries(series.map((s) => [s.id, pick(sum, s.id)])),
+    };
+  });
+  const bySpeed = {};
+  for (const k of allKeys) {
+    for (const [rpm, b] of Object.entries(store.days[k]?.bySpeed || {})) {
+      const x = bySpeed[rpm] || (bySpeed[rpm] = { rpm: parseInt(rpm, 10), kWh: 0, seconds: 0 });
+      x.kWh += b.kWh; x.seconds += b.seconds;
+    }
+  }
+  const daysWithData = allKeys.filter((k) => store.days[k]).length;
+  return {
+    range, group: range === '12m' ? 'month' : 'day', rate: store.rate, gas: { ...store.gas },
+    series,
+    totals: {
+      cost: total.totalCost, elecCost: total.elecCost, gasCost: total.gasCost, kWh: total.kWh, gasUnits: total.gasUnits,
+      pumpSeconds: total.runSeconds, daysWithData, perDay: daysWithData ? total.totalCost / daysWithData : 0,
+      bySeries: Object.fromEntries(series.map((s) => [s.id, pick(total, s.id)])),
+    },
+    rows,
+    bySpeed: Object.values(bySpeed).map((x) => ({ ...x, cost: x.kWh * store.rate, avgWatts: x.seconds ? (x.kWh * 3.6e6) / x.seconds : 0 }))
+      .sort((a, b) => b.seconds - a.seconds),
+    since: Object.keys(store.days).sort()[0] || null,
+  };
+}
+
 function start(njspcUrl) {
+  njspc = njspcUrl;
   sample(njspcUrl);
   setInterval(() => sample(njspcUrl), SAMPLE_MS);
   setInterval(() => { prune(); save(); }, SAVE_MS);
@@ -350,4 +445,4 @@ function start(njspcUrl) {
   process.on('SIGTERM', flush);
 }
 
-module.exports = { start, report, setRate, setSettings, _test: { accumulate, dayKey, getStore: () => store, summarize, equipmentOn } };
+module.exports = { start, report, history, freshSample, setRate, setSettings, _test: { accumulate, dayKey, getStore: () => store, summarize, equipmentOn } };

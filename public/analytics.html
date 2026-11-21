@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Pool Analytics</title>
+  <meta name="theme-color" content="#0b6e99">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-180.png">
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    /* Chart colors: validated categorical palette (fixed order, assigned per equipment item). */
+    .viz-root {
+      --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100;
+      --series-5: #e87ba4; --series-6: #008300; --series-7: #6250d6; --series-8: #e34948;
+      --series-other: #898781;
+      --grid: #e1e0d9; --axis: #c3c2b7; --ink-muted: #898781;
+    }
+    @media (prefers-color-scheme: dark) {
+      .viz-root {
+        --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
+        --series-5: #d55181; --series-6: #0ca30c; --series-7: #9085e9; --series-8: #e66767;
+        --grid: #2c2c2a; --axis: #383835;
+      }
+    }
+    .back { color: var(--accent); text-decoration: none; font-weight: 600; font-size: 15px; }
+    .filters { display: flex; gap: 4px; background: var(--tile); padding: 4px; border-radius: 12px; overflow-x: auto; }
+    .filters button { flex: 1; border: 0; background: transparent; padding: 9px 10px; border-radius: 9px; font-weight: 600; font-size: 14px; cursor: pointer; white-space: nowrap; }
+    .filters button[aria-pressed="true"] { background: var(--card); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+    .tiles4 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .tile4 { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px; }
+    .tile4 .label { font-size: 12px; font-weight: 600; color: var(--muted); }
+    .tile4 .big { font-size: 26px; font-weight: 700; letter-spacing: -.02em; }
+    .tile4 .sub { font-size: 12px; color: var(--muted); }
+    .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 10px; font-size: 13px; color: var(--muted); }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+    .chart { position: relative; }
+    .chart svg { display: block; width: 100%; overflow: visible; }
+    .chart.loading { opacity: .5; }
+    .tick { font-size: 11px; fill: var(--ink-muted); font-variant-numeric: tabular-nums; }
+    .col-hit { fill: transparent; cursor: pointer; outline: none; }
+    .col-hit:hover + .col-lift, .col-hit:focus + .col-lift { opacity: 1; }
+    .col-lift { fill: var(--text); opacity: 0; pointer-events: none; }
+    .tip {
+      position: absolute; pointer-events: none; z-index: 5;
+      min-width: 150px; max-width: 240px;
+      background: var(--card); color: var(--text);
+      border: 1px solid var(--line); border-radius: 10px;
+      box-shadow: 0 6px 20px rgba(0,0,0,.18);
+      padding: 8px 10px; font-size: 13px;
+    }
+    .tip .t-head { font-weight: 600; margin-bottom: 4px; }
+    .tip .t-row { display: flex; align-items: center; gap: 6px; }
+    .tip .t-row b { font-variant-numeric: tabular-nums; }
+    .tip .t-row i { width: 10px; height: 2px; display: inline-block; border-radius: 1px; }
+    .tip .t-row span { color: var(--muted); }
+    .tip .t-total { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 4px; }
+    .swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; margin-right: 6px; vertical-align: -1px; }
+    .table-wrap { overflow-x: auto; }
+    .etable.wide th, .etable.wide td { white-space: nowrap; padding-right: 10px; }
+    .eq-name { padding-right: 8px; }
+    .eq-sub { font-size: 12px; color: var(--muted); margin-left: 16px; }
+    #breakdown td:not(:first-child), #breakdown th:not(:first-child) { white-space: nowrap; }
+  </style>
+</head>
+<body class="viz-root">
+  <header class="topbar">
+    <div class="title">
+      <a class="back" href="./">‹ Pool Remote</a>
+      <h1>Analytics</h1>
+    </div>
+  </header>
+
+  <main>
+    <div class="filters" role="group" aria-label="Time range" id="ranges">
+      <button data-range="7d">7 days</button>
+      <button data-range="30d">30 days</button>
+      <button data-range="month">This month</button>
+      <button data-range="12m">12 months</button>
+    </div>
+
+    <div class="tiles4" id="tiles"></div>
+
+    <section class="card">
+      <div class="section-head">
+        <h2 id="chartTitle">Cost per day</h2>
+        <button class="link-btn" id="toggleTable" aria-expanded="false">Show table</button>
+      </div>
+      <div class="legend" id="legend"></div>
+      <div class="chart" id="chart"></div>
+      <div class="table-wrap" id="chartTable" hidden></div>
+    </section>
+
+    <section class="card">
+      <h2>By equipment</h2>
+      <div class="table-wrap" id="breakdown"></div>
+    </section>
+
+    <section class="card" id="speedCard" hidden>
+      <h2>Pump by speed</h2>
+      <div class="table-wrap" id="speeds"></div>
+    </section>
+
+    <p class="footer" id="footer"></p>
+  </main>
+
+  <script src="analytics.js"></script>
+</body>
+</html>

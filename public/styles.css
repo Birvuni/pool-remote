@@ -84,6 +84,8 @@ main {
   margin: 0 auto;
   padding: 4px 16px 32px;
   display: grid;
+  /* minmax(0, 1fr): wide content (tables) scrolls inside its card instead of widening the page. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
 }
 
@@ -288,6 +290,32 @@ main {
 .equip .remove { justify-self: start; padding: 4px 0; color: var(--bad); }
 .unit-input { display: flex; align-items: center; gap: 6px; }
 .unit-input span { color: var(--muted); font-size: 14px; white-space: nowrap; }
+
+.head-links { display: flex; gap: 14px; align-items: center; }
+a.link-btn { text-decoration: none; }
+
+/* Pi health strip */
+.pi-strip {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  font-size: 13px;
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+}
+.pi-label { font-weight: 700; color: var(--text); flex: none; }
+.pi-summary { display: flex; gap: 10px; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
+.pi-metric b { color: var(--text); font-weight: 600; }
+.pi-flag { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
+.pi-flag.warn { color: var(--warm); }
+.pi-flag.bad { color: var(--bad); }
+.pi-details { padding: 12px 16px; }
+.pi-details .etable td:first-child { color: var(--muted); }
 
 /* Top bar settings button */
 .top-right { display: flex; align-items: center; gap: 12px; }

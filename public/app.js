@@ -110,7 +110,17 @@ async function withPending(key, fn) {
   } finally {
     pending.delete(key);
     await refresh(true);
+    energySoon();
   }
+}
+
+// After switching equipment: read energy now, then again as pumps ramp up and the
+// controller reports the change (it can take a few seconds).
+let energyTimers = [];
+function energySoon() {
+  energyTimers.forEach(clearTimeout);
+  loadEnergy('now');
+  energyTimers = [4000, 10000].map((ms) => setTimeout(() => { refresh(true); loadEnergy('now'); }, ms));
 }
 
 // ---------- Data ----------
@@ -324,9 +334,10 @@ function renderPumps() {
   // setting: they don't add information and look like a second pump.
   if (pumps.some(isSpeedPump)) pumps = pumps.filter(isSpeedPump);
   const anyBodyOn = bodies().some((b) => b.isOn);
+  const extra = equipmentPumpRows();
   if (pumps.length === 0) {
     const on = bodies().find((b) => b.isOn);
-    $('pumpList').innerHTML = `
+    $('pumpList').innerHTML = extra + `
       <div class="pump">
         <div>
           <div class="name">Filter pump</div>
@@ -349,6 +360,29 @@ function renderPumps() {
         <div>
           <div class="name">${esc(p.name || 'Pump ' + p.id)}</div>
           <div class="meta">${esc(meta.join(' · '))}</div>
+        </div>
+        <span class="pill ${running ? 'on' : ''}">${running ? 'Running' : 'Off'}</span>
+      </div>`;
+  }).join('') + extra;
+}
+
+// Equipment marked "Pump" in Energy settings (e.g. a single-speed water feature pump that the
+// controller only switches on and off). Running state comes straight from its circuit, so it
+// updates as fast as the rest of the screen; power is the rating entered in settings.
+function equipmentPumpRows() {
+  const items = (E?.equipment || []).filter((e) => e.category === 'pump');
+  return items.map((e) => {
+    const src = e.source || {};
+    const list = src.kind === 'feature' ? S.features : S.circuits;
+    const item = (list || []).find((x) => x.id === src.id);
+    const running = item ? !!item.isOn : !!E.live?.on?.[e.id];
+    const rating = e.energy === 'gas' ? `${Math.round(e.btu / 1000)}k BTU/hr` : `${Math.round(e.watts).toLocaleString()} W (rated)`;
+    const meta = running ? `${rating} · ${money(e.perHour.cost)}/hr` : `${rating} · with ${item?.name || 'its circuit'}`;
+    return `
+      <div class="pump">
+        <div>
+          <div class="name">${esc(e.name)}</div>
+          <div class="meta">${esc(meta)}</div>
         </div>
         <span class="pill ${running ? 'on' : ''}">${running ? 'Running' : 'Off'}</span>
       </div>`;
@@ -401,7 +435,7 @@ function renderSchedules() {
 function renderFooter() {
   const time = new Date(lastOkAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
   const ver = S.appVersion ? ` · poolController ${S.appVersion}` : '';
-  $('footer').textContent = `Updated ${time}${ver}`;
+  $('footer').textContent = `${versionText()} · Updated ${time}${ver}`;
 }
 
 // ---------- Actions ----------
@@ -555,12 +589,14 @@ async function deleteSchedule() {
 // ---------- Energy ----------
 let E = null; // latest /local/energy report
 
-async function loadEnergy() {
+// fresh: false = cached report, true = reading if older than 2 s, 'now' = new reading right away.
+async function loadEnergy(fresh = false) {
   try {
-    const res = await fetch('/local/energy');
+    const res = await fetch(fresh === 'now' ? '/local/energy?fresh=now' : fresh ? '/local/energy?fresh=1' : '/local/energy');
     if (!res.ok) throw new Error(`Energy data unavailable (${res.status})`);
     E = await res.json();
     renderEnergy();
+    if (S) renderPumps();
   } catch (err) {
     $('energyBody').innerHTML = `<p class="empty">${esc(err.message)}</p>`;
   }
@@ -718,6 +754,11 @@ function renderEquipList() {
               value="${isGas ? (e.btu ?? '') : (e.watts ?? '')}" placeholder="${isGas ? '264000' : '1200'}">
             <span>${isGas ? 'BTU/hr' : 'W'}</span>
           </div></label>
+        <label class="field full"><span>Category</span>
+          <select data-k="category">
+            ${[['pump', 'Pump (shown in the Pump card)'], ['heater', 'Heating'], ['other', 'Other']]
+              .map(([v, l]) => `<option value="${v}" ${(e.category || 'other') === v ? 'selected' : ''}>${l}</option>`).join('')}
+          </select></label>
         <button type="button" class="link-btn remove" data-remove="${i}">Remove</button>
       </div>`;
   }).join('') : '<p class="empty">Nothing tracked yet. Tap + Add.</p>';
@@ -732,6 +773,7 @@ function readEquipForm() {
     const sv = row.querySelector('[data-k="source"]').value;
     e.source = sv === 'heater' ? { kind: 'heater' } : sv ? { kind: sv.split(':')[0], id: parseInt(sv.split(':')[1], 10) } : null;
     e.energy = row.querySelector('[data-k="energy"]').value;
+    e.category = row.querySelector('[data-k="category"]').value;
     const rating = parseFloat(row.querySelector('[data-k="rating"]').value);
     if (e.energy === 'gas') { e.btu = rating; delete e.watts; } else { e.watts = rating; delete e.btu; }
   });
@@ -770,6 +812,7 @@ async function saveSettings() {
     if (!res.ok) throw new Error(data.message || 'Could not save');
     E = data;
     renderEnergy();
+    if (S) renderPumps();
     $('settingsDialog').close();
     toast('Settings saved');
   } catch (err) {
@@ -788,7 +831,7 @@ $('settingsDialog').addEventListener('click', (e) => {
   if (!t) return;
   if (t.id === 'addEquip') {
     readEquipForm();
-    draftEquip.push({ id: newEquipId(), name: '', source: null, energy: 'electric', watts: undefined });
+    draftEquip.push({ id: newEquipId(), name: '', source: null, energy: 'electric', watts: undefined, category: 'other' });
     renderEquipList();
     const rows = document.querySelectorAll('#equipList .equip');
     rows[rows.length - 1]?.querySelector('input')?.focus();
@@ -799,6 +842,90 @@ $('settingsDialog').addEventListener('click', (e) => {
   } else if (t.id === 'settingsCancel') {
     $('settingsDialog').close();
   }
+});
+
+// ---------- Pool Remote version ----------
+let V = null;
+async function loadVersion() {
+  try { V = await (await fetch('/local/version')).json(); } catch { V = null; }
+  if (S) renderFooter();
+}
+function versionText() {
+  if (!V) return 'Pool Remote';
+  const date = V.date ? ` · ${new Date(V.date).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}` : '';
+  return `Pool Remote v${V.version}${V.commit ? ` (${V.commit})` : ''}${date}`;
+}
+
+// ---------- Pi health ----------
+let SYS = null;
+async function loadSystem() {
+  try {
+    const res = await fetch('/local/system');
+    if (!res.ok) return;
+    SYS = await res.json();
+    renderSystem();
+  } catch { /* keep the last reading */ }
+}
+
+function fmtDuration(sec) {
+  const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
+  return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
+}
+
+// Status levels for the strip. Each warning carries a word, never color alone.
+function systemFlags(x) {
+  const flags = [];
+  const p = x.power;
+  if (p?.underVoltageNow) flags.push(['bad', 'Low power now']);
+  else if (p?.underVoltageSinceBoot) flags.push(['warn', 'Low power earlier']);
+  if (p?.throttledNow) flags.push(['bad', 'Slowed down']);
+  if (x.tempC >= 80) flags.push(['bad', 'Too hot']);
+  else if (x.tempC >= 70) flags.push(['warn', 'Hot']);
+  if (x.wifi && x.wifi.dbm <= -80) flags.push(['bad', 'Wi-Fi very weak']);
+  else if (x.wifi && x.wifi.dbm <= -70) flags.push(['warn', 'Wi-Fi weak']);
+  if (x.disk && x.disk.pct >= 90) flags.push(['warn', 'Disk almost full']);
+  if (x.memory && x.memory.pct >= 90) flags.push(['warn', 'Memory almost full']);
+  return flags;
+}
+
+function wifiWord(dbm) {
+  return dbm > -55 ? 'excellent' : dbm > -67 ? 'good' : dbm > -75 ? 'fair' : 'weak';
+}
+
+function renderSystem() {
+  const x = SYS;
+  if (!x) return;
+  $('piStrip').hidden = false;
+  const parts = [];
+  if (typeof x.cpuPct === 'number') parts.push(`<span class="pi-metric">CPU <b>${Math.round(x.cpuPct)}%</b></span>`);
+  if (typeof x.tempC === 'number') parts.push(`<span class="pi-metric"><b>${Math.round(x.tempC)}°C</b></span>`);
+  if (x.memory) parts.push(`<span class="pi-metric">RAM <b>${Math.round(x.memory.pct)}%</b></span>`);
+  if (x.wifi) parts.push(`<span class="pi-metric">Wi-Fi <b>${Math.round(x.wifi.dbm)} dBm</b></span>`);
+  for (const [lvl, text] of systemFlags(x)) parts.push(`<span class="pi-flag ${lvl}">⚠ ${esc(text)}</span>`);
+  if (!systemFlags(x).length) parts.push('<span class="pi-metric">OK</span>');
+  $('piSummary').innerHTML = parts.join('');
+
+  const p = x.power;
+  const powerText = !p ? 'Not available' : p.underVoltageNow ? 'Under-voltage now: use the official 2.5 A supply'
+    : p.underVoltageSinceBoot ? 'Under-voltage happened since boot' : 'OK';
+  const rows = [
+    ['Model', x.model],
+    ['CPU', typeof x.cpuPct === 'number' ? `${Math.round(x.cpuPct)}% · load ${x.load.map((l) => l.toFixed(2)).join(' / ')} (${x.cores} cores)` : '—'],
+    ['Temperature', typeof x.tempC === 'number' ? `${x.tempC.toFixed(1)} °C (${Math.round(x.tempC * 9 / 5 + 32)} °F)` : '—'],
+    ['Memory', x.memory ? `${x.memory.usedMB} of ${x.memory.totalMB} MB (${Math.round(x.memory.pct)}%)` : '—'],
+    ['Disk', x.disk ? `${x.disk.freeGB.toFixed(1)} GB free of ${x.disk.totalGB.toFixed(1)} GB` : '—'],
+    ['Wi-Fi', x.wifi ? `${Math.round(x.wifi.dbm)} dBm (${wifiWord(x.wifi.dbm)})${x.wifi.qualityPct !== null ? ` · quality ${x.wifi.qualityPct}%` : ''}` : 'Not on Wi-Fi'],
+    ['Power supply', powerText],
+    ['Up for', fmtDuration(x.uptimeSec)],
+    ['Pool Remote running for', fmtDuration(x.appUptimeSec)],
+  ];
+  $('piDetails').innerHTML = `<table class="etable">${rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('')}</table>`;
+}
+
+$('piStrip').addEventListener('click', () => {
+  const open = $('piDetails').hidden;
+  $('piDetails').hidden = !open;
+  $('piStrip').setAttribute('aria-expanded', String(open));
 });
 
 // ---------- Events ----------
@@ -859,8 +986,14 @@ setInterval(() => {
 }, POLL_MS);
 
 setInterval(() => {
-  if (document.visibilityState === 'visible') loadEnergy();
-}, 30000);
+  if (document.visibilityState === 'visible') loadEnergy(true);
+}, 10000);
+
+setInterval(() => {
+  if (document.visibilityState === 'visible') loadSystem();
+}, 10000);
 
 refresh(true);
 loadEnergy();
+loadSystem();
+loadVersion();

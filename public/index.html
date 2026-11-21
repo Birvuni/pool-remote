@@ -32,6 +32,12 @@
   </header>
 
   <main id="app">
+    <button type="button" class="pi-strip" id="piStrip" aria-expanded="false" aria-controls="piDetails" hidden>
+      <span class="pi-label">Pi</span>
+      <span id="piSummary" class="pi-summary"></span>
+    </button>
+    <div id="piDetails" class="card pi-details" hidden></div>
+
     <section class="hero card" id="hero">
       <div class="hero-label" id="heroLabel">Water</div>
       <div class="hero-temp"><span id="heroTemp">--</span><span class="unit" id="heroUnit">°F</span></div>
@@ -73,7 +79,10 @@
     <section class="card" id="energySection">
       <div class="section-head">
         <h2>Energy</h2>
-        <button class="link-btn" id="openSettings">Settings</button>
+        <span class="head-links">
+          <a class="link-btn" href="analytics.html" id="openAnalytics">Analytics</a>
+          <button class="link-btn" id="openSettings">Settings</button>
+        </span>
       </div>
       <div id="energyBody"><p class="empty">Loading…</p></div>
     </section>

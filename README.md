@@ -20,6 +20,9 @@ and talks to it through njsPC's REST API.
     - Costs are computed from logged run time and the *current* rating, so correcting a
       rating also corrects past days.
 - Schedules: view, add, edit, delete
+- **Pi health** strip at the top (CPU, temperature, memory, Wi-Fi, power-supply warnings; tap for details)
+- **Analytics** page (Energy → Analytics): cost, energy and run time by equipment, per day or month
+- Release version at the bottom of every page; see [CHANGELOG.md](CHANGELOG.md)
 - **Panel settings** (gear icon): view and change the EasyTouch's own settings, with a confirmation
   before anything is written to the panel:
   - IntelliFlo speeds (RPM per circuit/feature)
