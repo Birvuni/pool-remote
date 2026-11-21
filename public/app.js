@@ -934,6 +934,64 @@ function versionText() {
   return `Pool Remote v${V.version}${V.commit ? ` (${V.commit})` : ''}${date}`;
 }
 
+// ---------- Updates ----------
+let UPD = null;
+async function loadUpdate(force = false) {
+  try {
+    const res = await fetch(force ? '/local/update?force=1' : '/local/update');
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Update check failed');
+    UPD = data;
+    renderUpdate();
+    if (force) toast(data.available ? `v${data.latest} is available` : data.blockedReason || `Up to date (v${data.current})`, !!data.blockedReason);
+  } catch (err) {
+    if (force) toast(err.message, true);
+  }
+}
+
+function renderUpdate() {
+  const u = UPD;
+  const show = !!(u && u.available);
+  $('updateBar').hidden = !show;
+  if (!show) return;
+  $('updateTitle').textContent = `Pool Remote v${u.latest} is available`;
+  $('updateSub').textContent = `You have v${u.current}. Updating takes about 10 seconds.`;
+  $('updateNotes').textContent = u.notes || 'No release notes.';
+  $('updateNotesBox').hidden = !u.notes;
+}
+
+async function updateNow() {
+  const u = UPD;
+  if (!u?.available) return;
+  if (!confirm(`Update Pool Remote from v${u.current} to v${u.latest}?\n\nThe app restarts on the Pi and this page reloads.`)) return;
+  const btn = $('updateNow');
+  btn.disabled = true;
+  btn.textContent = 'Updating…';
+  try {
+    const res = await fetch('/local/update', { method: 'POST', headers: { 'x-pool-remote': 'update' } });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Update failed');
+    $('updateSub').textContent = `Restarting with v${data.to}…`;
+    // Wait for the restarted server to report the new version, then reload.
+    const deadline = Date.now() + 90000;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 2000));
+      try {
+        const v = await (await fetch('/local/version', { cache: 'no-store' })).json();
+        if (v.version === data.to) { location.reload(); return; }
+      } catch { /* still restarting */ }
+    }
+    throw new Error('Updated, but the app did not come back within 90 s. Check pm2 on the Pi.');
+  } catch (err) {
+    toast(err.message, true);
+    btn.disabled = false;
+    btn.textContent = 'Update';
+  }
+}
+
+$('updateNow').addEventListener('click', updateNow);
+$('checkUpdates').addEventListener('click', () => loadUpdate(true));
+
 // ---------- Pi health ----------
 let SYS = null;
 async function loadSystem() {
@@ -1075,3 +1133,5 @@ refresh(true);
 loadEnergy();
 loadSystem();
 loadVersion();
+loadUpdate();
+setInterval(() => { if (document.visibilityState === 'visible') loadUpdate(); }, 6 * 60 * 60 * 1000);

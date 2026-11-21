@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const energy = require('./energy');
 const system = require('./system');
+const updater = require('./updater');
 const { execFile } = require('child_process');
 
 // Release version (package.json) + the git commit actually running, for the page footer.
@@ -119,6 +120,18 @@ function local(req, res) {
   }
   if (req.method === 'GET' && url === '/local/system') return sendJson(res, 200, system.report());
   if (req.method === 'GET' && url === '/local/version') return sendJson(res, 200, VERSION);
+  if (req.method === 'GET' && url === '/local/update') {
+    return updater.check(parsed.searchParams.get('force') === '1')
+      .then((r) => sendJson(res, 200, r))
+      .catch((err) => sendJson(res, 502, { message: `Couldn't check for updates: ${err.message}` }));
+  }
+  if (req.method === 'POST' && url === '/local/update') {
+    // Custom header: browsers won't send it cross-site without a CORS preflight (which this
+    // server never approves), so other websites can't trigger an update.
+    if (req.headers['x-pool-remote'] !== 'update') return sendJson(res, 403, { message: 'Missing update header' });
+    return updater.apply((r) => sendJson(res, 200, r))
+      .catch((err) => sendJson(res, 409, { message: err.message }));
+  }
   if (req.method === 'PUT' && (url === '/local/energy/rate' || url === '/local/energy/settings')) {
     let raw = '';
     req.on('data', (c) => { raw += c; if (raw.length > 20000) req.destroy(); });

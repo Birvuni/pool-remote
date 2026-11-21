@@ -28,6 +28,11 @@
   </header>
 
   <main id="app">
+    <section class="update-bar" id="updateBar" hidden>
+      <div class="update-text"><b id="updateTitle">Update available</b><span id="updateSub"></span></div>
+      <button type="button" class="btn primary" id="updateNow">Update</button>
+      <details class="update-notes" id="updateNotesBox"><summary>What's new</summary><pre id="updateNotes"></pre></details>
+    </section>
     <button type="button" class="pi-strip" id="piStrip" aria-expanded="false" aria-controls="piDetails" hidden>
       <span class="pi-label">Pi</span>
       <span id="piSummary" class="pi-summary"></span>
@@ -100,7 +105,7 @@
       <div id="scheduleList" class="schedule-list"></div>
     </section>
 
-    <p class="footer" id="footer"></p>
+    <p class="footer"><span id="footer"></span> · <button type="button" class="link-btn small" id="checkUpdates">Check for updates</button></p>
   </main>
 
   <dialog id="scheduleDialog" class="sheet">

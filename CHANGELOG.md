@@ -1,11 +1,17 @@
 # Changelog
 
 Every change to Pool Remote gets a release version, shown at the bottom of the app
-(`Pool Remote vX.Y.Z (commit) · date`). Update the Pi with:
+(`Pool Remote vX.Y.Z (commit) · date`). Update from the app (Update bar / "Check for updates" in the footer), or on the Pi with:
 
 ```bash
 cd ~/pool-remote && git pull && pm2 restart poolRemote
 ```
+
+## 1.7.0 — 2026-11-21
+- **Update from the app:** when a new version is on GitHub, a bar at the top shows what's new
+  and an **Update** button. One tap updates Pool Remote on the Pi and restarts it (via pm2).
+  Only clean fast-forward updates from this repository are allowed; "Check for updates" is
+  in the footer.
 
 ## 1.6.1 — 2026-11-21
 - Panel settings → Custom names: collapsed by default, explains what it's for, and shows the
