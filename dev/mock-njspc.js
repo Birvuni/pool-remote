@@ -86,7 +86,9 @@ function pumps() {
   // and the IntelliFlo shows up as pump 2 (once poolController is patched).
   const twoSpeed = { id: 10, name: 'Two Speed', type: { val: 65, name: 'ds', desc: 'Two-Speed' } };
   if (!INTELLIFLO) return [twoSpeed];
-  return [twoSpeed, { id: config.vsPump.id, name: 'Intelliflo VS', type: { val: 128, name: 'vs', desc: 'Intelliflo VS' }, rpm, watts, flow }];
+  const vs = { id: config.vsPump.id, name: 'Intelliflo VS', type: { val: 128, name: 'vs', desc: 'Intelliflo VS' } };
+  // Like the real poolController: no RPM/watts fields while the pump is off.
+  return [twoSpeed, rpm ? { ...vs, rpm, watts, flow } : vs];
 }
 
 function stateAll() {

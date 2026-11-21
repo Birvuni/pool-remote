@@ -314,11 +314,15 @@ function renderTiles(group) {
 }
 
 function renderPumps() {
-  const reports = (p) => typeof p.rpm === 'number' || typeof p.watts === 'number';
+  // Variable-speed pumps (IntelliFlo VS/VSF/VF) talk to the controller. Decide by type, not by
+  // current readings: poolController leaves out RPM/watts while the pump is off.
+  const SPEED_TYPES = ['vs', 'vssvrs', 'vsf', 'vf'];
+  const isSpeedPump = (p) => SPEED_TYPES.includes((p.type?.name || '').toLowerCase())
+    || typeof p.rpm === 'number' || typeof p.watts === 'number';
   let pumps = (S.pumps || []).filter((p) => p && p.id);
-  // When a pump reports speed/power (e.g. IntelliFlo), hide relay-only entries like the
-  // EasyTouch's "Two Speed" setting: they don't add information and look like a second pump.
-  if (pumps.some(reports)) pumps = pumps.filter(reports);
+  // With an IntelliFlo present, hide relay-only entries like the EasyTouch's "Two Speed"
+  // setting: they don't add information and look like a second pump.
+  if (pumps.some(isSpeedPump)) pumps = pumps.filter(isSpeedPump);
   const anyBodyOn = bodies().some((b) => b.isOn);
   if (pumps.length === 0) {
     const on = bodies().find((b) => b.isOn);

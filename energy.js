@@ -176,7 +176,8 @@ async function sample(njspcUrl) {
     const pumps = (Array.isArray(state.pumps) ? state.pumps : []).filter((p) => p && p.id);
     let watts = 0, rpm = 0, flow = 0, reporting = 0;
     for (const p of pumps) {
-      if (typeof p.watts === 'number') reporting++;
+      // A variable-speed pump counts as reporting even while off (poolController omits watts then).
+      if (typeof p.watts === 'number' || ['vs', 'vssvrs', 'vsf', 'vf'].includes((p.type?.name || '').toLowerCase())) reporting++;
       if (typeof p.watts === 'number' && p.watts > 0) watts += p.watts;
       if (typeof p.rpm === 'number') rpm = Math.max(rpm, p.rpm);
       if (typeof p.flow === 'number') flow = Math.max(flow, p.flow);
