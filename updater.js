@@ -44,20 +44,22 @@ function notesSince(changelog, version) {
 async function check(force = false) {
   if (!force && cache && Date.now() - cache.at < CHECK_TTL_MS) return cache.result;
   const branch = (await git(['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
+  // Use FETCH_HEAD (what was just downloaded) rather than origin/<branch>, so this works even
+  // when the clone has no remote-tracking refspec configured.
   await git(['fetch', '--quiet', 'origin', branch], 60000);
   const head = (await git(['rev-parse', 'HEAD'])).trim();
-  const remote = (await git(['rev-parse', `origin/${branch}`])).trim();
+  const remote = (await git(['rev-parse', 'FETCH_HEAD'])).trim();
   const dirty = (await git(['status', '--porcelain', '--untracked-files=no'])).trim() !== '';
   let canFastForward = false;
-  try { await git(['merge-base', '--is-ancestor', 'HEAD', `origin/${branch}`]); canFastForward = true; } catch { /* diverged */ }
+  try { await git(['merge-base', '--is-ancestor', 'HEAD', remote]); canFastForward = true; } catch { /* diverged */ }
   const current = currentVersion();
   let latest = current, notes = '';
   if (head !== remote) {
-    try { latest = JSON.parse(await git(['show', `origin/${branch}:package.json`])).version; } catch { /* keep current */ }
-    try { notes = notesSince(await git(['show', `origin/${branch}:CHANGELOG.md`]), current); } catch { /* no changelog */ }
+    try { latest = JSON.parse(await git(['show', `${remote}:package.json`])).version; } catch { /* keep current */ }
+    try { notes = notesSince(await git(['show', `${remote}:CHANGELOG.md`]), current); } catch { /* no changelog */ }
   }
   const result = {
-    current, latest, branch,
+    current, latest, branch, remoteSha: remote,
     commit: head.slice(0, 7), latestCommit: remote.slice(0, 7),
     available: head !== remote && canFastForward,
     blockedReason: head === remote ? null : dirty ? 'The Pi has local changes to Pool Remote files, so it won\'t update automatically.'
@@ -77,7 +79,7 @@ async function apply(onDone) {
   try {
     const c = await check(true);
     if (!c.available) throw new Error(c.blockedReason || 'Already up to date');
-    await git(['merge', '--ff-only', `origin/${c.branch}`], 60000);
+    await git(['merge', '--ff-only', c.remoteSha], 60000);
     cache = null;
     const version = currentVersion();
     onDone({ ok: true, from: c.current, to: version });

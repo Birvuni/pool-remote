@@ -7,6 +7,13 @@ Every change to Pool Remote gets a release version, shown at the bottom of the a
 cd ~/pool-remote && git pull && pm2 restart poolRemote
 ```
 
+## 1.7.1 — 2026-11-22
+- Fix: the "Update available" bar (and the Pi strip) could show even when there was nothing to
+  show, because a style rule overrode "hidden". Hidden elements now always stay hidden.
+- Fix: update checks no longer depend on the clone tracking GitHub's branches (uses what
+  `git fetch` just downloaded).
+- Energy: long equipment names wrap instead of being cut off.
+
 ## 1.7.0 — 2026-11-21
 - **Update from the app:** when a new version is on GitHub, a bar at the top shows what's new
   and an **Update** button. One tap updates Pool Remote on the Pi and restarts it (via pm2).

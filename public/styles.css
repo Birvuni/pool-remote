@@ -40,6 +40,9 @@
 
 * { box-sizing: border-box; }
 
+/* The hidden attribute must win over component display rules (flex/grid). */
+[hidden] { display: none !important; }
+
 html, body { margin: 0; }
 
 body {
@@ -126,6 +129,7 @@ main {
 .hero-temp { font-size: 64px; font-weight: 700; line-height: 1.05; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
 .hero-temp .unit { font-size: 26px; font-weight: 500; opacity: .8; margin-left: 2px; vertical-align: top; position: relative; top: 10px; }
 .hero-sub { font-size: 14px; opacity: .9; margin-top: 4px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.hero-sub:empty { display: none; }
 .hero-temps { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
 .hero-air { text-align: right; }
 .hero-air-temp { font-size: 38px; font-weight: 700; line-height: 1.1; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
@@ -272,8 +276,8 @@ main {
 /* Energy */
 .live { display: grid; gap: 6px; margin-bottom: 12px; }
 .live-row { display: grid; grid-template-columns: minmax(0, 38%) auto 1fr; align-items: baseline; gap: 10px; }
-.live-name { font-size: 13px; font-weight: 600; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.live-row .meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.live-name { font-size: 13px; font-weight: 600; color: var(--muted); overflow-wrap: anywhere; line-height: 1.25; }
+.live-row .meta { overflow-wrap: anywhere; }
 .live-val { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .live-row .meta { color: var(--muted); font-size: 13px; }
 .live-row.firing .live-val { color: var(--warm); }
@@ -503,3 +507,17 @@ a.link-btn { text-decoration: none; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* IntelliBrite colors */
+.light-themes { margin-top: 12px; }
+.light-themes .label { font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+.theme-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.theme-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 12px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--tile);
+  font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.theme-chip i { width: 12px; height: 12px; border-radius: 50%; display: inline-block; flex: none; border: 1px solid rgba(0,0,0,.15); }
+.theme-chip[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.stale { color: var(--warm); font-weight: 600; }
