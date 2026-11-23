@@ -34,6 +34,29 @@ let store = load();
 let last = null; // previous sample: { at, watts, rpm, on: { [equipId]: true } }
 let live = { watts: 0, rpm: 0, flow: 0, on: {}, at: null, ok: false, pumps: 0 };
 let dirty = false;
+// Frozen-data watchdog: poolController's copy of the panel clock (state.time) advances every few
+// seconds while it receives status from the controller. If it stops, its data is stale.
+const STALE_MS = 3 * 60 * 1000;      // no panel-clock change for this long = stale
+const STALE_SKEW_MS = 2 * 3600 * 1000; // or the panel clock is this far behind real time
+let panelTimeSeen = null;   // last state.time string
+let panelChangedAt = 0;     // when it last changed (ms)
+
+function parsePanelTime(s) {
+  if (typeof s !== 'string' || !s) return null;
+  const t = Date.parse(s.replace(/([+-]\d{2})(\d{2})$/, '$1:$2'));
+  return Number.isFinite(t) ? t : null;
+}
+
+// { stale, since } from a /state/all snapshot. since = the frozen panel time (ISO) when known.
+function freshness(state, now) {
+  const raw = state?.time || '';
+  if (raw !== panelTimeSeen) { panelTimeSeen = raw; panelChangedAt = now; }
+  const panelMs = parsePanelTime(raw);
+  const notAdvancing = panelChangedAt && now - panelChangedAt > STALE_MS;
+  const farBehind = panelMs !== null && now - panelMs > STALE_SKEW_MS;
+  const stale = !raw || notAdvancing || farBehind;
+  return { stale, since: panelMs !== null ? new Date(panelMs).toISOString() : null };
+}
 let njspc = null;        // poolController URL, set by start()
 let sampling = null;     // in-flight sample (so concurrent requests share one)
 
@@ -203,9 +226,16 @@ async function sample(njspcUrl) {
       if (typeof p.flow === 'number') flow = Math.max(flow, p.flow);
     }
     const on = equipmentOn(state);
+    const fresh = freshness(state, now);
+    if (fresh.stale) {
+      // Don't record frozen data as if equipment kept running (it isn't real usage).
+      last = null;
+      live = { watts, rpm, flow, on, at: new Date(now).toISOString(), ok: true, pumps: reporting, stale: true, staleSince: fresh.since };
+      return;
+    }
     if (last && now - last.at <= MAX_GAP_MS) accumulate(last.at, now, last);
     last = { at: now, watts, rpm, on };
-    live = { watts, rpm, flow, on, at: new Date(now).toISOString(), ok: true, pumps: reporting };
+    live = { watts, rpm, flow, on, at: new Date(now).toISOString(), ok: true, pumps: reporting, stale: false };
   } catch (err) {
     last = null;
     live = { ...live, ok: false, error: err.message };
@@ -357,6 +387,22 @@ function setSettings({ rate, gasRate, equipment, gasInputBtu } = {}) {
 
 function setRate(rate) { setSettings({ rate }); }
 
+// Remove whole days from the history (e.g. days recorded while the data was frozen).
+// days: ['2026-11-21', ...]. Returns the days actually removed.
+function deleteDays(days) {
+  if (!Array.isArray(days) || !days.length || days.length > 400) throw new Error('days must be a list of YYYY-MM-DD dates');
+  const removed = [];
+  for (const d of days) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) throw new Error(`Not a date: ${d}`);
+    if (store.days[d]) { delete store.days[d]; removed.push(d); }
+  }
+  // If today was removed, start it fresh from the next reading.
+  if (removed.includes(dayKey(Date.now()))) last = null;
+  dirty = true;
+  save();
+  return removed;
+}
+
 // Take a new reading now. Background refreshes are throttled to one every 2 s; force (used right
 // after equipment was switched) always takes a new one, after any reading already in progress.
 async function freshSample(force = false) {
@@ -445,4 +491,4 @@ function start(njspcUrl) {
   process.on('SIGTERM', flush);
 }
 
-module.exports = { start, report, history, freshSample, setRate, setSettings, _test: { accumulate, dayKey, getStore: () => store, summarize, equipmentOn } };
+module.exports = { start, report, history, freshSample, setRate, setSettings, deleteDays, _test: { accumulate, dayKey, getStore: () => store, summarize, equipmentOn, freshness, sample } };

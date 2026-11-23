@@ -132,10 +132,27 @@ Pool Remote's own endpoints: `GET /local/energy` (report) and
 
 Mock with a power-reporting pump: `MOCK_INTELLIFLO=1 npm run mock`.
 
+## Troubleshooting: the app says "No data from the controller since …"
+
+poolController stopped receiving status from the EasyTouch, so everything it reports is frozen
+(commands may still work). Fix: `pm2 restart poolController` on the Pi.
+
+Known cause: **"reload configuration"** (dashPanel's button or `/app/config/reload`) on an
+unpatched poolController 10.1.0 + EasyTouch discards all status updates until the next restart.
+`node dev/patch-njspc-pump.js` fixes it. Don't use the reload; restart poolController instead.
+
+Energy recorded while frozen is skipped automatically from 1.7.2 on. To remove days recorded
+earlier, e.g. Nov 21–22:
+
+```bash
+curl -s -X POST -H 'x-pool-remote: delete-days' -H 'content-type: application/json' \
+  -d '{"days":["2026-11-21","2026-11-22"]}' localhost:8080/local/energy/delete-days
+```
+
 ## Troubleshooting: IntelliFlo not showing up (EasyTouch/IntelliTouch)
 
 `node dev/bus-check.js` records the RS-485 bus for 2 minutes and reports whether a pump is
-talking and what pump setup the controller reports.
+talking and what pump setup the controller reports (pump setup is sent at poolController startup).
 
 If the pump is on the bus and the controller reports it, but poolController (10.1.0) still lists
 only a "Two Speed" pump, it's a poolController bug: with a Two-Speed pump defined, the IntelliFlo

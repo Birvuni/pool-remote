@@ -120,6 +120,18 @@ function local(req, res) {
   }
   if (req.method === 'GET' && url === '/local/system') return sendJson(res, 200, system.report());
   if (req.method === 'GET' && url === '/local/version') return sendJson(res, 200, VERSION);
+  if (req.method === 'POST' && url === '/local/energy/delete-days') {
+    if (req.headers['x-pool-remote'] !== 'delete-days') return sendJson(res, 403, { message: 'Missing confirmation header' });
+    let raw = '';
+    req.on('data', (c) => { raw += c; if (raw.length > 20000) req.destroy(); });
+    req.on('end', () => {
+      try {
+        const removed = energy.deleteDays(JSON.parse(raw || '{}').days);
+        sendJson(res, 200, { removed });
+      } catch (err) { sendJson(res, 400, { message: err.message }); }
+    });
+    return;
+  }
   if (req.method === 'GET' && url === '/local/update') {
     return updater.check(parsed.searchParams.get('force') === '1')
       .then((r) => sendJson(res, 200, r))

@@ -43,8 +43,11 @@ module.exports = function makeConfig({ circuits, features, circuitTypes, bodies,
   const toConfig = (c) => ({ id: c.id, name: c.name, nameId: c.nameId, type: c.type.val, freeze: c.freeze, eggTimer: c.eggTimer, dontStop: c.dontStop, showInFeatures: c.showInFeatures, isActive: true });
   const bad = (msg) => Object.assign(new Error(msg), { status: 400 });
 
+  // PUT /mock/freeze {at: ISO|null}: simulate poolController no longer receiving status
+  // (its panel clock stops), like after /app/config/reload on an unpatched EasyTouch.
+  let frozenAt = null;
   function panelTime() {
-    const d = new Date(Date.now() + clockOffsetMs);
+    const d = frozenAt ? new Date(frozenAt) : new Date(Date.now() + clockOffsetMs);
     const tzo = d.getTimezoneOffset();
     const pad = (n) => String(Math.floor(Math.abs(n))).padStart(2, '0');
     // Same format as poolController's Timestamp.toISOLocal (no colon in the offset).
@@ -118,6 +121,9 @@ module.exports = function makeConfig({ circuits, features, circuitTypes, bodies,
         if (typeof body.manualHeat !== 'undefined') options.manualHeat = !!body.manualHeat;
         return b;
       }
+      case 'PUT /mock/freeze':
+        frozenAt = body.at ? Date.parse(body.at) : null;
+        return { frozenAt: frozenAt ? new Date(frozenAt).toISOString() : null };
       case 'PUT /config/dateTime': {
         const now = new Date();
         const set = new Date(2000 + body.year, body.month - 1, body.date, body.hour, body.min, now.getSeconds());

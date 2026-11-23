@@ -4,8 +4,7 @@
 // Usage (on the Pi, with poolController running under pm2):
 //   node dev/bus-check.js [seconds] [path-to-poolController-out.log]
 //
-// It briefly turns on poolController's packet logging, asks it to re-read the controller
-// configuration, records the bus for N seconds (default 120), restores the logging
+// It briefly turns on poolController's packet logging, records the bus for N seconds (default 120), restores the logging
 // settings, and summarizes what it saw. Run it with the pump running (Pool mode on).
 
 const http = require('http');
@@ -47,7 +46,8 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
   console.log(`Recording the bus for ${SECONDS} s… (keep the pump running)`);
   await call('PUT', '/app/logger/setOptions', { packet: { enabled: true, logToConsole: true } });
-  await call('PUT', '/app/config/reload');
+  // Note: no /app/config/reload here. On EasyTouch (unpatched poolController) it freezes all status
+  // updates until poolController restarts.
   try {
     for (let s = SECONDS; s > 0; s -= 10) {
       process.stdout.write(`  ${s} s left\r`);
@@ -116,8 +116,8 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const cfg = packets.filter((p) => p.src === 16 && (p.action === 24 || p.action === 27) && p.payload.length > 1);
   console.log('\nPUMP SETUP REPORTED BY THE EASYTOUCH:');
   if (!cfg.length) {
-    console.log('  No pump-setup replies captured in this window (the config re-read may not have reached pumps yet).');
-    console.log('  Try again with a longer capture, e.g.: node dev/bus-check.js 240');
+    console.log('  No pump-setup replies captured. poolController asks for them at startup: run');
+    console.log('  "pm2 restart poolController", then right away: node dev/bus-check.js 240');
   } else {
     const types = { 0: 'none', 64: 'IntelliFlo VSF', 128: 'IntelliFlo VS', 134: 'IntelliFlo VS Ultra', 169: 'IntelliFlo VS+SVRS', 255: 'IntelliFlo VS (old panel)' };
     const seen = new Map();

@@ -186,6 +186,12 @@ function renderStatus(errMsg) {
     return;
   }
   $('poolName').textContent = S.alias || 'Pool';
+  const st = staleInfo();
+  if (st) {
+    dot.className = 'dot bad';
+    text.textContent = `No data from the controller since ${st.sinceText}`;
+    return;
+  }
   const type = (S.controllerType || '').toLowerCase();
   const statusName = S.status?.name || '';
   if (type === 'nixie' || type === 'unknown' || !type) {
@@ -200,6 +206,23 @@ function renderStatus(errMsg) {
     text.textContent = S.model || S.equipment?.model || 'Connected';
   }
 
+}
+
+// poolController stopped getting status from the controller: its data (and this screen) is frozen.
+// The Pool Remote server detects it (panel clock not advancing); as a fallback, a panel clock far
+// behind real time means the same.
+function staleInfo() {
+  let since = null;
+  if (E?.live?.stale) since = E.live.staleSince;
+  else {
+    const raw = typeof S?.time === 'string' ? S.time.replace(/([+-]\d{2})(\d{2})$/, '$1:$2') : '';
+    const t = raw ? Date.parse(raw) : NaN;
+    if (!Number.isFinite(t) || Date.now() - t < 2 * 3600 * 1000) return null;
+    since = new Date(t).toISOString();
+  }
+  const d = since ? new Date(since) : null;
+  const sinceText = d && !isNaN(d) ? d.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'a while ago';
+  return { since, sinceText };
 }
 
 function renderHero() {
@@ -225,6 +248,7 @@ function renderHero() {
   const modeName = active.heatMode?.name;
   if (modeName && modeName !== 'off' && typeof sp === 'number') parts.push(`<span>Heat to ${sp}°</span>`);
   if (!anyOn) parts.push('<span class="badge">Pump off · last reading</span>');
+  if (staleInfo()) parts.unshift('<span class="badge stale-badge">⚠ Not updating</span>');
   $('heroSub').innerHTML = parts.join('') || '&nbsp;';
   renderNow();
 }
@@ -265,6 +289,10 @@ function scheduleNow() {
 
 function renderNow() {
   const rows = [];
+  const st = staleInfo();
+  if (st) {
+    rows.push(['⚠ Frozen', `This is the state as of ${st.sinceText}. poolController stopped getting updates from the controller; restart it on the Pi: pm2 restart poolController`]);
+  }
   const list = bodies();
   const on = list.find((b) => b.isOn);
   rows.push(['Mode', on ? `${on.name} mode` : 'Everything off']);
@@ -298,7 +326,7 @@ function renderNow() {
   if (S.freeze) rows.push(['Freeze', 'Freeze protection is running']);
 
   // What it's all costing right now: measured pump power plus equipment that's on.
-  if (E) {
+  if (E && !st) {
     let perHour = (E.live?.watts || 0) / 1000 * E.rate;
     for (const e of E.equipment || []) if (equipIsOn(e)) perHour += e.perHour?.cost || 0;
     rows.push(['Cost now', perHour > 0 ? `${money(perHour)}/hr` : '$0.00/hr']);
@@ -674,7 +702,7 @@ async function loadEnergy(fresh = false) {
     if (!res.ok) throw new Error(`Energy data unavailable (${res.status})`);
     E = await res.json();
     renderEnergy();
-    if (S) { renderPumps(); renderNow(); }
+    if (S) { renderPumps(); renderNow(); renderStatus(); renderHero(); }
   } catch (err) {
     $('energyBody').innerHTML = `<p class="empty">${esc(err.message)}</p>`;
   }

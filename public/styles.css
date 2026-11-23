@@ -521,3 +521,4 @@ a.link-btn { text-decoration: none; }
 .theme-chip i { width: 12px; height: 12px; border-radius: 50%; display: inline-block; flex: none; border: 1px solid rgba(0,0,0,.15); }
 .theme-chip[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
 .stale { color: var(--warm); font-weight: 600; }
+.badge.stale-badge { background: var(--bad); color: #fff; }

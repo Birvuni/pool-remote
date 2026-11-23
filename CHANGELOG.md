@@ -7,6 +7,17 @@ Every change to Pool Remote gets a release version, shown at the bottom of the a
 cd ~/pool-remote && git pull && pm2 restart poolRemote
 ```
 
+## 1.7.2 — 2026-11-23
+- **Frozen-data warning.** If poolController stops getting updates from the controller (its copy
+  of the panel clock stops advancing for 3 minutes, or is hours behind), the status line turns
+  red ("No data from the controller since …"), the top card shows "Not updating" with how to
+  fix it, and "Cost now" is hidden. Previously frozen data looked current.
+- **Energy isn't recorded from frozen data** (it showed equipment running that wasn't).
+- `POST /local/energy/delete-days` removes bad days from the history (see README).
+- `dev/patch-njspc-pump.js` adds a 4th poolController fix: on EasyTouch, "reload configuration"
+  (dashPanel button or /app/config/reload) froze all status updates until a restart.
+- `dev/bus-check.js` no longer triggers a configuration reload.
+
 ## 1.7.1 — 2026-11-22
 - Fix: the "Update available" bar (and the Pi strip) could show even when there was nothing to
   show, because a style rule overrode "hidden". Hidden elements now always stay hidden.
