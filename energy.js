@@ -14,7 +14,7 @@ const path = require('path');
 const DATA_DIR = path.join(__dirname, 'data');
 const FILE = path.join(DATA_DIR, 'energy.json');
 const SAMPLE_MS = parseInt(process.env.ENERGY_SAMPLE_MS || '30000', 10);
-const SAVE_MS = 5 * 60 * 1000;
+const SAVE_MS = 60 * 1000; // a crash loses at most this much
 const MAX_GAP_MS = 3 * 60 * 1000; // don't count time across gaps longer than this (Pi or njsPC was down)
 const KEEP_DAYS = 400;
 const RPM_BUCKET = 50;
@@ -34,6 +34,9 @@ let store = load();
 let last = null; // previous sample: { at, watts, rpm, on: { [equipId]: true } }
 let live = { watts: 0, rpm: 0, flow: 0, on: {}, at: null, ok: false, pumps: 0 };
 let dirty = false;
+// Logger health, shown in the app so a logger that isn't recording is visible.
+const stats = { startedAt: Date.now(), recorded: 0, staleSkips: 0, errors: 0, lastError: null, lastErrorAt: null,
+  lastRecordAt: null, lastStaleAt: null, savedAt: null, saveError: null };
 // Frozen-data watchdog: poolController's copy of the panel clock (state.time) advances every few
 // seconds while it receives status from the controller. If it stops, its data is stale.
 const STALE_MS = 3 * 60 * 1000;      // no panel-clock change for this long = stale
@@ -123,7 +126,10 @@ function save() {
     fs.writeFileSync(tmp, JSON.stringify(store));
     fs.renameSync(tmp, FILE);
     dirty = false;
+    stats.savedAt = Date.now();
+    stats.saveError = null;
   } catch (err) {
+    stats.saveError = err.message;
     console.error('energy: save failed:', err.message);
   }
 }
@@ -230,14 +236,24 @@ async function sample(njspcUrl) {
     if (fresh.stale) {
       // Don't record frozen data as if equipment kept running (it isn't real usage).
       last = null;
+      stats.staleSkips++;
+      stats.lastStaleAt = now;
       live = { watts, rpm, flow, on, at: new Date(now).toISOString(), ok: true, pumps: reporting, stale: true, staleSince: fresh.since };
       return;
     }
-    if (last && now - last.at <= MAX_GAP_MS) accumulate(last.at, now, last);
+    if (last && now - last.at <= MAX_GAP_MS && now > last.at) {
+      accumulate(last.at, now, last);
+      stats.recorded++;
+      stats.lastRecordAt = now;
+    }
     last = { at: now, watts, rpm, on };
     live = { watts, rpm, flow, on, at: new Date(now).toISOString(), ok: true, pumps: reporting, stale: false };
   } catch (err) {
-    last = null;
+    // Keep `last`: one failed read shouldn't throw away the time since the previous one.
+    // The next good read covers the gap (if it's under MAX_GAP_MS; a longer outage isn't counted).
+    stats.errors++;
+    stats.lastError = err.message;
+    stats.lastErrorAt = now;
     live = { ...live, ok: false, error: err.message };
   }
 }
@@ -325,6 +341,8 @@ function report() {
       .map((s) => ({ ...s, cost: s.kWh * store.rate, avgWatts: s.seconds ? (s.kWh * 3.6e6) / s.seconds : 0 }))
       .sort((a, b) => b.seconds - a.seconds),
     since: Object.keys(store.days).sort()[0] || null,
+    logger: { ...stats, now: Date.now(), sampleMs: SAMPLE_MS,
+      startsLastHour: (store.starts || []).filter((t) => Date.now() - t < 3600e3).length },
   };
 }
 
@@ -478,17 +496,31 @@ function history(range = '30d') {
 
 function start(njspcUrl) {
   njspc = njspcUrl;
+  // Remember unexpected restarts (no clean stop before them; saved right away) so a crash loop
+  // shows up in the app. Updates and pm2 restarts stop cleanly and aren't counted.
+  const recent = (store.starts || []).filter((t) => Date.now() - t < 86400e3);
+  store.starts = store.cleanStop === false ? [...recent, Date.now()].slice(-50) : recent;
+  store.cleanStop = false;
+  dirty = true;
+  save();
   sample(njspcUrl);
   setInterval(() => sample(njspcUrl), SAMPLE_MS);
   setInterval(() => { prune(); save(); }, SAVE_MS);
   const flush = () => {
     if (last) accumulate(last.at, Date.now(), last);
     last = null;
+    store.cleanStop = true;
+    dirty = true;
     save();
     process.exit(0);
   };
   process.on('SIGINT', flush);
   process.on('SIGTERM', flush);
+  process.on('uncaughtException', (err) => {
+    console.error('poolRemote crashed:', err);
+    try { if (last) accumulate(last.at, Date.now(), last); save(); } catch { /* best effort */ }
+    process.exit(1);
+  });
 }
 
 module.exports = { start, report, history, freshSample, setRate, setSettings, deleteDays, _test: { accumulate, dayKey, getStore: () => store, summarize, equipmentOn, freshness, sample } };

@@ -969,8 +969,28 @@ function renderEnergy() {
     ${itemTable}
     ${speedTable}
     ${dayTable}
+    ${loggerNote()}
     <p class="hint">Electricity ${(E.rate * 100).toFixed(2)}¢/kWh · Gas $${g.rate.toFixed(2)}/${esc(g.unit)}
       · Equipment costs are estimated from run time × rating${E.since ? ` · since ${new Date(E.since + 'T12:00:00').toLocaleDateString([], { month: 'short', day: 'numeric' })}` : ''}</p>`;
+}
+
+// Is the energy log actually recording? Warn when it isn't, quietly confirm when it is.
+function loggerNote() {
+  const l = E?.logger;
+  if (!l) return '';
+  const ago = (t) => {
+    const s = Math.max(0, Math.round((l.now - t) / 1000));
+    return s < 90 ? `${s} s ago` : s < 5400 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`;
+  };
+  const recent = (t) => t && l.now - t < 5 * 60e3;
+  const warn = [];
+  if (l.startsLastHour >= 3) warn.push(`Pool Remote stopped unexpectedly ${l.startsLastHour} times in the last hour, so recent usage may be missing. It may be crashing: run <code>pm2 logs poolRemote --lines 50</code> on the Pi.`);
+  if (recent(l.lastStaleAt)) warn.push('Not recording: poolController\'s data is frozen (see the red status at the top).');
+  if (recent(l.lastErrorAt)) warn.push(`Couldn't read poolController ${ago(l.lastErrorAt)}: ${esc(l.lastError || 'error')}.`);
+  if (l.saveError) warn.push(`Can't save the energy log: ${esc(l.saveError)}.`);
+  if (!l.lastRecordAt && l.now - l.startedAt > 3 * l.sampleMs) warn.push('Nothing recorded since Pool Remote started.');
+  if (warn.length) return `<p class="warn-note logger-note"><b>Energy log:</b> ${warn.join(' ')}</p>`;
+  return `<p class="hint logger-ok">● Recording · last reading ${l.lastRecordAt ? ago(l.lastRecordAt) : '—'} · saved ${l.savedAt ? ago(l.savedAt) : '—'}</p>`;
 }
 
 // ---------- Energy settings ----------

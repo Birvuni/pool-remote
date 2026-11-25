@@ -83,7 +83,8 @@ async function apply(onDone) {
     cache = null;
     const version = currentVersion();
     onDone({ ok: true, from: c.current, to: version });
-    setTimeout(() => process.exit(0), 800); // pm2 restarts the process with the new code
+    // pm2 restarts the process with the new code. SIGTERM (not exit) so energy saves first.
+    setTimeout(() => process.kill(process.pid, 'SIGTERM'), 800);
   } finally {
     busy = false;
   }

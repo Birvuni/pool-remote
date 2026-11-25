@@ -466,6 +466,8 @@ a.link-btn { text-decoration: none; }
 .clock-line { margin: 0 0 6px; }
 p.warn-note { margin: 0 0 8px; padding: 10px 12px; border-radius: 10px; background: var(--warm-soft); color: var(--warm); font-size: 13px; }
 p.warn-note code { font-size: 12px; }
+.logger-note { margin-top: 12px; }
+.logger-ok { color: var(--muted); }
 p.warn-note .btn { display: block; margin-top: 8px; padding: 8px 14px; background: var(--card); color: var(--text); font-size: 14px; }
 
 /* Schedules */

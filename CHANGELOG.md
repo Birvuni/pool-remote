@@ -7,6 +7,16 @@ Every change to Pool Remote gets a release version, shown at the bottom of the a
 cd ~/pool-remote && git pull && pm2 restart poolRemote
 ```
 
+## 1.11.3 — 2026-11-25
+- **Energy log fixes** (usage could go unrecorded while the live numbers looked fine):
+  - A failed read of poolController no longer throws away the time since the last reading;
+    the next good reading covers it (outages over 3 minutes still aren't counted).
+  - The log is saved every minute (was 5), when Pool Remote crashes, and before an in-app
+    update restarts it (updates used to drop up to 5 minutes).
+- **Energy log status** at the bottom of the Energy card: "● Recording · last reading 12 s ago ·
+  saved 30 s ago", or a warning saying why it isn't recording (frozen data, can't reach
+  poolController, can't save, or Pool Remote crashing and restarting).
+
 ## 1.11.2 — 2026-11-25
 - **Lights:** the big "Lights" tile is replaced by a small power button next to the LIGHTS title
   (gray "Off", glowing yellow "On"). Shows and colors still turn the lights on by themselves.
