@@ -57,6 +57,11 @@ let schedules = [
 const circuitById = (id) => circuits.find((c) => c.id === id);
 // PUT /mock/weather {air, freeze}: change air temperature / freeze protection for testing alerts.
 const weather = { air: 64, freeze: false };
+// IntelliBrite: the EasyTouch's light group 192 ("Intellibrite") holds the IntelliBrite circuits.
+const LIGHT_THEMES = { off: 0, on: 1, party: 177, romance: 178, caribbean: 179, american: 180, sunset: 181, royal: 182,
+  blue: 193, green: 194, red: 195, white: 196, magenta: 197 };
+const themeDesc = { sunset: 'California Sunset' };
+const lightGroup = { id: 192, name: 'Intellibrite', isActive: true, lightingTheme: { val: 177, name: 'party', desc: 'Party' } };
 // MOCK_SWITCH_DELAY_MS: pool/spa changes take effect after this delay (valves and pump are slow).
 const SWITCH_DELAY = parseInt(process.env.MOCK_SWITCH_DELAY_MS || '0', 10);
 
@@ -117,6 +122,7 @@ function stateAll() {
     equipment: { model: 'EasyTouch2 4', controllerType: 'easytouch' },
     circuits,
     features,
+    lightGroups: [{ ...lightGroup, isOn: !!circuitById(2)?.isOn }],
     pumps: pumps(),
     schedules: schedules.map((s) => ({ ...s, circuit: circuitById(s.circuit) })),
   };
@@ -158,6 +164,14 @@ http.createServer((req, res) => {
     console.log(key, raw);
     try {
       if (key === 'GET /state/all') return send(res, 200, stateAll());
+      if (key === 'PUT /state/circuit/setTheme') {
+        if (parseInt(body.id, 10) !== lightGroup.id) return send(res, 400, { message: `mock: setTheme only for light group ${lightGroup.id}` });
+        const name = String(body.theme).toLowerCase();
+        if (!(name in LIGHT_THEMES)) return send(res, 400, { message: `Invalid theme ${body.theme}` });
+        lightGroup.lightingTheme = { val: LIGHT_THEMES[name], name, desc: themeDesc[name] || name[0].toUpperCase() + name.slice(1) };
+        circuitById(2).isOn = name !== 'off';
+        return send(res, 200, { ...lightGroup, isOn: circuitById(2).isOn });
+      }
       if (key === 'PUT /mock/weather') {
         if (typeof body.air === 'number') weather.air = body.air;
         if (typeof body.freeze === 'boolean') weather.freeze = body.freeze;

@@ -7,6 +7,12 @@ Every change to Pool Remote gets a release version, shown at the bottom of the a
 cd ~/pool-remote && git pull && pm2 restart poolRemote
 ```
 
+## 1.9.0 — 2026-11-25
+- **IntelliBrite colors:** the Lights card has buttons for the 6 light shows (Party, Romance,
+  Caribbean, American, California Sunset, Royal) and 5 colors (Blue, Green, Red, White, Magenta).
+  One tap switches all IntelliBrite lights to it (turning them on); the active one is
+  highlighted, with "Now: …" underneath. Sent through the EasyTouch's IntelliBrite light group.
+
 ## 1.8.0 — 2026-11-25
 - **Cold-weather alerts** (new card + settings): cold air at your threshold (default 38°F),
   freeze protection on/off, **pump not running in freezing air** (urgent, repeats every 30 min),

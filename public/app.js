@@ -170,6 +170,7 @@ function render() {
   renderMode();
   renderHeat();
   renderTiles('lights');
+  renderLightThemes();
   renderTiles('aux');
   renderPumps();
   renderSchedules();
@@ -440,6 +441,60 @@ function tileItems(group) {
     }
   }
   return items;
+}
+
+// ---------- IntelliBrite colors ----------
+// The EasyTouch groups IntelliBrite lights into a light group (id 192, "Intellibrite"); setting the
+// group's theme switches every IntelliBrite light to it (and turns them on).
+const INTELLIBRITE_THEMES = [
+  { name: 'party', label: 'Party', show: true, swatch: 'conic-gradient(#ff3b3b, #ffd000, #2ecc71, #1e90ff, #b44bff, #ff3b3b)' },
+  { name: 'romance', label: 'Romance', show: true, swatch: 'linear-gradient(135deg, #ff4d8d, #b0306a)' },
+  { name: 'caribbean', label: 'Caribbean', show: true, swatch: 'linear-gradient(135deg, #00c2c7, #1e6bff, #2ecc71)' },
+  { name: 'american', label: 'American', show: true, swatch: 'linear-gradient(135deg, #e53935 33%, #ffffff 33% 66%, #1e4bd8 66%)' },
+  { name: 'sunset', label: 'Sunset', show: true, swatch: 'linear-gradient(135deg, #ff8a00, #ff3d6e, #7b2ff7)' },
+  { name: 'royal', label: 'Royal', show: true, swatch: 'linear-gradient(135deg, #5b2bd9, #1e3a8a)' },
+  { name: 'blue', label: 'Blue', swatch: '#1e6bff' },
+  { name: 'green', label: 'Green', swatch: '#22b14c' },
+  { name: 'red', label: 'Red', swatch: '#e53935' },
+  { name: 'white', label: 'White', swatch: '#ffffff' },
+  { name: 'magenta', label: 'Magenta', swatch: '#d81b9a' },
+];
+
+function intellibriteGroup() {
+  const hasIntellibrite = (S?.circuits || []).some((c) => (c.type?.name || '').toLowerCase() === 'intellibrite');
+  if (!hasIntellibrite) return null;
+  return (S.lightGroups || []).find((g) => g && g.isActive !== false && /intellibrite/i.test(g.name || '')) || null;
+}
+
+function renderLightThemes() {
+  const box = $('lightThemes');
+  const g = intellibriteGroup();
+  box.hidden = !g;
+  if (!g) return;
+  const lightsOn = (S.circuits || []).some((c) => (c.type?.name || '').toLowerCase() === 'intellibrite' && c.isOn);
+  const current = (g.lightingTheme?.name || '').toLowerCase();
+  const chip = (t) => {
+    const pressed = lightsOn && current === t.name;
+    const busy = isBusy('theme:' + t.name);
+    return `<button type="button" class="theme-chip ${busy ? 'busy' : ''}" data-theme="${t.name}" aria-pressed="${pressed}">
+      <i style="background:${t.swatch}" aria-hidden="true"></i>${esc(t.label)}</button>`;
+  };
+  box.innerHTML = `
+    <div class="label">Light shows</div>
+    <div class="theme-chips">${INTELLIBRITE_THEMES.filter((t) => t.show).map(chip).join('')}</div>
+    <div class="label">Colors</div>
+    <div class="theme-chips">${INTELLIBRITE_THEMES.filter((t) => !t.show).map(chip).join('')}</div>
+    <p class="hint">${lightsOn && current ? `Now: ${esc((INTELLIBRITE_THEMES.find((t) => t.name === current) || {}).label || g.lightingTheme?.desc || current)}` : 'Tap a show or color: the lights turn on in it.'}</p>`;
+}
+
+async function setLightTheme(name) {
+  const g = intellibriteGroup();
+  if (!g) return;
+  const label = (INTELLIBRITE_THEMES.find((t) => t.name === name) || {}).label || name;
+  await withPending('theme:' + name, async () => {
+    await api('PUT', '/state/circuit/setTheme', { id: g.id, theme: name });
+    toast(`Lights: ${label}`);
+  });
 }
 
 function renderTiles(group) {
@@ -1187,6 +1242,7 @@ document.addEventListener('click', (e) => {
   if (!t) return;
 
   if (t.dataset.mode) return setMode(t.dataset.mode);
+  if (t.dataset.theme) return setLightTheme(t.dataset.theme);
   if (t.dataset.setpoint) return bumpSetpoint(parseInt(t.dataset.body, 10), parseInt(t.dataset.setpoint, 10));
   if (t.dataset.heatmode) {
     if (t.getAttribute('aria-pressed') === 'true') return;
