@@ -7,6 +7,14 @@ Every change to Pool Remote gets a release version, shown at the bottom of the a
 cd ~/pool-remote && git pull && pm2 restart poolRemote
 ```
 
+## 1.11.0 — 2026-11-25
+- **Spa on fire:** when the spa is on, the top card turns orange with animated flames along the
+  bottom and rising sparks. Back to blue when the spa is off. (Reduced-motion setting: still
+  orange, no animation.)
+- **Lights card redesigned:** full-width light switch; the 6 light shows as cards with a
+  preview of their colors (3 per row); the 5 colors as round swatches in one row; the active
+  one is outlined, with "Now showing …" underneath.
+
 ## 1.10.1 — 2026-11-25
 - **Spa pump keeps running:** Panel settings → Pump speeds warns when Spa has no speed of its
   own (the pump then runs only while the heater fires, so it stops at temperature). One tap on
