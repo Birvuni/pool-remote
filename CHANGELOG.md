@@ -7,6 +7,14 @@ Every change to Pool Remote gets a release version, shown at the bottom of the a
 cd ~/pool-remote && git pull && pm2 restart poolRemote
 ```
 
+## 1.13.0 — 2026-11-25
+- **Freeze protection in Panel settings** (gear → Panel settings, second section):
+  - the panel's freeze temperature (36°F air, fixed by the EasyTouch), the air now, and whether
+    freeze protection is running;
+  - an on/off switch per circuit and feature for which equipment it runs (written to the panel
+    after a confirmation);
+  - the cold alert temperature (Pool Remote's own warning), with Save.
+
 ## 1.12.0 — 2026-11-25
 - **Energy details per period:** tap **Today**, **Last 7 days** or **This month** in the Energy
   card. The details below follow your choice: cost by equipment (with a total that matches the

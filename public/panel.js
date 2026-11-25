@@ -39,7 +39,7 @@ async function reloadPanel(msg) {
 
 function renderPanel() {
   $('panelBody').innerHTML = [
-    pumpSection(), circuitSection(), namesSection(), spaSection(), clockSection(), infoSection(),
+    pumpSection(), freezeSection(), circuitSection(), namesSection(), spaSection(), clockSection(), infoSection(),
   ].join('');
 }
 
@@ -250,14 +250,8 @@ async function saveCircuit() {
   ].join('\n');
   if (notUsed && !confirm('"Not Used" removes this circuit from the EasyTouch. Continue?')) return;
   if (!confirmWrite(`${kind === 'feature' ? 'Feature' : 'Circuit'} ${id}:\n${changes}`)) return;
-  // Always send every field: the EasyTouch command is built from the full set (e.g. a missing
-  // freeze flag would turn freeze protection off).
-  const payload = {
-    id, nameId, type, freeze, eggTimer, dontStop,
-    showInFeatures: typeof original.showInFeatures === 'boolean' ? original.showInFeatures : true,
-  };
   try {
-    await api('PUT', kind === 'feature' ? '/config/feature' : '/config/circuit', payload);
+    await writeCircuit(kind, original, { nameId, type, freeze, eggTimer, dontStop });
     $('circuitDialog').close();
     await reloadPanel(`${nameDesc} saved`);
   } catch (err) { toast(err.message, true); }
@@ -308,6 +302,101 @@ async function saveNames() {
 }
 
 // ---------- Spa ----------
+// Always send every field: the EasyTouch command is built from the full set (e.g. a missing
+// freeze flag would turn freeze protection off).
+function writeCircuit(kind, c, changes) {
+  const payload = {
+    id: c.id, nameId: c.nameId, type: c.type, freeze: !!c.freeze,
+    eggTimer: c.dontStop ? EGG_DONT_STOP : (c.eggTimer || EGG_DEFAULT), dontStop: !!c.dontStop,
+    showInFeatures: typeof c.showInFeatures === 'boolean' ? c.showInFeatures : true,
+    ...changes,
+  };
+  return api('PUT', kind === 'feature' ? '/config/feature' : '/config/circuit', payload);
+}
+
+// ---------- Freeze protection ----------
+// The EasyTouch's freeze temperature is fixed (about 36°F air); what can be set is which
+// circuits and features it runs. The cold alert is Pool Remote's own setting.
+const FREEZE_START_F = 36;
+
+function freezeItems() {
+  const out = [];
+  for (const kind of ['circuit', 'feature']) {
+    const o = kind === 'feature' ? PANEL.opts.features : PANEL.opts.circuits;
+    const fns = functionList(kind);
+    for (const c of ((kind === 'feature' ? o.features : o.circuits) || [])) {
+      if (!c || !c.id || c.isActive === false) continue;
+      if ((fns.find((f) => f.val === c.type) || {}).name === 'notused') continue;
+      out.push({ kind, c });
+    }
+  }
+  return out;
+}
+
+function freezeSection() {
+  const C = unit() === '°C';
+  const start = C ? '2°C' : `${FREEZE_START_F}°F`;
+  const air = S?.temps?.air;
+  const running = !!S?.freeze;
+  const items = freezeItems();
+  const err = sectionError(PANEL.opts.circuits);
+  const thr = typeof AL?.settings?.airThreshold === 'number' ? AL.settings.airThreshold : (C ? 3 : 38);
+  return `
+    <section class="pset" id="freezeSet">
+      <h3>Freeze protection</h3>
+      <div class="freeze-status ${running ? 'on' : ''}">
+        <div><span class="fz-label">Starts at</span><b>${start} air</b></div>
+        <div><span class="fz-label">Air now</span><b>${typeof air === 'number' ? Math.round(air) + '°' : '—'}</b></div>
+        <div><span class="fz-label">Status</span><b>${running ? 'Running' : 'Standby'}</b></div>
+      </div>
+      <p class="hint">The EasyTouch sets this temperature itself; it can't be changed. When the air drops to it,
+        the panel runs the equipment checked below (and the pump) until it warms up.</p>
+      ${err || `<div class="pset-list freeze-list">${items.map(({ kind, c }) => `
+        <label class="pset-row freeze-row">
+          <span><span class="name">${esc(c.name || kind + ' ' + c.id)}</span>
+            <span class="meta">${kind === 'feature' ? 'Feature' : 'Circuit'}${isBodyFunction(c.type, kind) ? ' · keeps water moving' : ''}</span></span>
+          <input type="checkbox" class="switch" data-freeze="${kind}:${c.id}" ${c.freeze ? 'checked' : ''}
+            aria-label="Freeze protection for ${esc(c.name || '')}">
+        </label>`).join('')}</div>`}
+      <h3 class="pset-sub">Cold alert</h3>
+      <div class="freeze-alert">
+        <label class="field"><span>Warn me when air drops to (${C ? '°C' : '°F'})</span>
+          <input type="number" id="fzThreshold" step="1" inputmode="numeric" value="${thr}"></label>
+        <button type="button" class="btn primary" id="fzThresholdSave">Save</button>
+      </div>
+      <p class="hint">Pool Remote's own warning (in the app${AL?.settings?.notify?.enabled ? ' and on your phone' : ''}), not written
+        to the panel. A few degrees above ${start} gives you notice before freeze protection starts.
+        ${AL?.settings?.notify?.enabled ? '' : 'Phone notifications: set them up in the Cold-weather alerts card.'}</p>
+    </section>`;
+}
+
+async function saveFreezeFlag(input) {
+  const [kind, idStr] = input.dataset.freeze.split(':');
+  const id = parseInt(idStr, 10);
+  const o = kind === 'feature' ? PANEL.opts.features : PANEL.opts.circuits;
+  const c = ((kind === 'feature' ? o.features : o.circuits) || []).find((x) => x.id === id);
+  const on = input.checked;
+  if (!c || !confirmWrite(`${c.name}: freeze protection ${on ? 'on' : 'off'}`)) { input.checked = !on; return; }
+  input.disabled = true;
+  try {
+    await writeCircuit(kind, c, { freeze: on });
+    await reloadPanel(`${c.name}: freeze protection ${on ? 'on' : 'off'}`);
+  } catch (err) { input.checked = !on; input.disabled = false; toast(err.message, true); }
+}
+
+async function saveFreezeThreshold() {
+  try {
+    const res = await fetch('/local/alerts/settings', { method: 'PUT', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ airThreshold: parseFloat($('fzThreshold').value) }) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Could not save');
+    AL = data;
+    renderAlertsCard();
+    renderColdBanner();
+    toast(`Cold alert at ${data.settings.airThreshold}°`);
+  } catch (err) { toast(err.message, true); }
+}
+
 function spaSection() {
   const spa = bodies().find((b) => (b.type?.name || '').toLowerCase() === 'spa');
   const g = PANEL.opts.general;
@@ -431,6 +520,7 @@ $('panelBody').addEventListener('click', (e) => {
     return renderPanel();
   }
   if (t.dataset.speedSave) return savePumpSpeeds(parseInt(t.dataset.speedSave, 10));
+  if (t.id === 'fzThresholdSave') return saveFreezeThreshold();
   if (t.dataset.editCircuit) {
     const [kind, id] = t.dataset.editCircuit.split(':');
     return openCircuitEditor(kind, parseInt(id, 10));
@@ -441,6 +531,7 @@ $('panelBody').addEventListener('click', (e) => {
 
 $('panelBody').addEventListener('change', (e) => {
   if (e.target.id === 'spaManualHeat') saveSpaManualHeat(e.target);
+  if (e.target.dataset.freeze) saveFreezeFlag(e.target);
 });
 
 $('circuitForm').addEventListener('submit', (e) => { e.preventDefault(); saveCircuit(); });
