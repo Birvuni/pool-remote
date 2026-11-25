@@ -121,7 +121,7 @@
       <div id="scheduleList" class="schedule-list"></div>
     </section>
 
-    <p class="footer"><span id="footer"></span> · <button type="button" class="link-btn small" id="checkUpdates">Check for updates</button></p>
+    <p class="footer"><span id="footer"></span> · <button type="button" class="link-btn small" id="openChangelog">Update history</button> · <button type="button" class="link-btn small" id="checkUpdates">Check for updates</button></p>
   </main>
 
   <dialog id="scheduleDialog" class="sheet">
@@ -187,6 +187,15 @@
         <button type="submit" class="btn primary" id="settingsSave">Save</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="changelogDialog" class="sheet tall" aria-labelledby="changelogTitle">
+    <div class="sheet-head">
+      <h2 id="changelogTitle">Update history</h2>
+      <button type="button" class="link-btn" id="changelogClose">Done</button>
+    </div>
+    <p class="hint">Every change to Pool Remote, newest first.</p>
+    <div id="changelogBody" class="changelog"></div>
   </dialog>
 
   <dialog id="panelDialog" class="sheet tall">

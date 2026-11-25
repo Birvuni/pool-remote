@@ -1146,6 +1146,33 @@ async function updateNow() {
 $('updateNow').addEventListener('click', updateNow);
 $('checkUpdates').addEventListener('click', () => loadUpdate(true));
 
+// Update history: the whole CHANGELOG.md, one block per release.
+async function openChangelog() {
+  const body = $('changelogBody');
+  body.innerHTML = '<p class="hint">Loading…</p>';
+  $('changelogDialog').showModal();
+  try {
+    const r = await fetch('/local/changelog', { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const { version, text } = await r.json();
+    const sections = text.split(/^## /m).slice(1); // drop the intro above the first release
+    body.innerHTML = sections.map((s) => {
+      const nl = s.indexOf('\n');
+      const head = (nl < 0 ? s : s.slice(0, nl)).trim();
+      const [ver, date] = head.split(/\s+—\s+/);
+      const installed = ver === version;
+      return `<section class="cl-release${installed ? ' current' : ''}">
+        <div class="cl-head"><b>v${esc(ver)}</b>${date ? `<span>${esc(date)}</span>` : ''}${installed ? '<span class="cl-badge">Installed</span>' : ''}</div>
+        ${notesHtml(nl < 0 ? '' : s.slice(nl + 1))}
+      </section>`;
+    }).join('') || '<p class="hint">No releases listed.</p>';
+  } catch (err) {
+    body.innerHTML = `<p class="hint">Couldn't load the update history (${esc(err.message)}).</p>`;
+  }
+}
+$('openChangelog').addEventListener('click', openChangelog);
+$('changelogClose').addEventListener('click', () => $('changelogDialog').close());
+
 // ---------- Pi health ----------
 let SYS = null;
 async function loadSystem() {

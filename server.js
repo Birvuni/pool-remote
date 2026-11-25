@@ -121,6 +121,13 @@ function local(req, res) {
   }
   if (req.method === 'GET' && url === '/local/system') return sendJson(res, 200, system.report());
   if (req.method === 'GET' && url === '/local/version') return sendJson(res, 200, VERSION);
+  if (req.method === 'GET' && url === '/local/changelog') {
+    fs.readFile(path.join(__dirname, 'CHANGELOG.md'), 'utf8', (err, text) => {
+      if (err) return sendJson(res, 404, { message: 'No changelog' });
+      sendJson(res, 200, { version: VERSION.version, text });
+    });
+    return;
+  }
   if (req.method === 'GET' && url === '/local/alerts') return sendJson(res, 200, alerts.report());
   if (req.method === 'PUT' && url === '/local/alerts/settings') {
     let raw = '';

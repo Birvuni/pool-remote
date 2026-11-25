@@ -7,6 +7,12 @@ Every change to Pool Remote gets a release version, shown at the bottom of the a
 cd ~/pool-remote && git pull && pm2 restart poolRemote
 ```
 
+## 1.10.0 — 2026-11-25
+- **Update history** in the app: tap "Update history" at the bottom of the page to see every
+  release and what changed, newest first. The version on your Pi is marked "Installed".
+- Pop-up windows (Panel settings, Energy settings, …) keep their rounded corners on the right
+  side; the scrollbar no longer squares them off.
+
 ## 1.9.1 — 2026-11-25
 - **Panel settings button moved** into the top card (water / air / Now), labeled
   "Panel settings" with the gear, instead of a small icon in the title bar.
