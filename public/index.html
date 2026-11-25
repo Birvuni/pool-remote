@@ -28,16 +28,22 @@
   </header>
 
   <main id="app">
+    <section class="cold-banner" id="coldBanner" role="status" hidden></section>
     <section class="update-bar" id="updateBar" hidden>
       <div class="update-text"><b id="updateTitle">Update available</b><span id="updateSub"></span></div>
       <button type="button" class="btn primary" id="updateNow">Update</button>
       <details class="update-notes" id="updateNotesBox"><summary>What's new</summary><div id="updateNotes" class="notes"></div></details>
     </section>
-    <button type="button" class="pi-strip" id="piStrip" aria-expanded="false" aria-controls="piDetails" hidden>
-      <span class="pi-label">Pi</span>
-      <span id="piSummary" class="pi-summary"></span>
-    </button>
-    <div id="piDetails" class="card pi-details" hidden></div>
+    <section class="card pi-card" id="piStrip" hidden>
+      <div class="pi-head">
+        <h2>Raspberry Pi</h2>
+        <span id="piOverall" class="pi-overall"></span>
+        <button type="button" class="link-btn" id="piToggle" aria-expanded="false" aria-controls="piDetails">Details</button>
+      </div>
+      <div class="pi-grid" id="piSummary"></div>
+      <div id="piNotes"></div>
+      <div id="piDetails" class="pi-details" hidden></div>
+    </section>
 
     <section class="hero card" id="hero">
       <div class="hero-temps">
@@ -84,6 +90,14 @@
     <section class="card">
       <h2>Pump</h2>
       <div id="pumpList" class="pump-list"></div>
+    </section>
+
+    <section class="card" id="alertsSection">
+      <div class="section-head">
+        <h2>Cold-weather alerts</h2>
+        <button class="link-btn" id="openAlerts">Settings</button>
+      </div>
+      <div id="alertsBody"><p class="empty">Loading…</p></div>
     </section>
 
     <section class="card" id="energySection">
@@ -199,9 +213,46 @@
     </form>
   </dialog>
 
+  <dialog id="alertsDialog" class="sheet">
+    <form method="dialog" id="alertsForm">
+      <h2>Cold-weather alerts</h2>
+      <label class="check-row"><input type="checkbox" id="alNotify">
+        <span><b>Send alerts to my phone</b><br><small>Uses the free <b>ntfy</b> app (App Store / Google Play), no account needed.</small></span></label>
+      <div id="alNtfy">
+        <label class="field"><span>Your private topic name</span>
+          <div class="unit-input"><input type="text" id="alTopic" maxlength="64" autocomplete="off" autocapitalize="off" spellcheck="false">
+          <button type="button" class="link-btn" id="alNewTopic">New</button></div></label>
+        <ol class="steps">
+          <li>Install <b>ntfy</b> on your phone.</li>
+          <li>Tap <b>+</b> (Subscribe to topic) and enter the topic name above exactly.</li>
+          <li>Tap <b>Save</b> here, then <b>Send test</b>.</li>
+        </ol>
+        <p class="hint">The topic name works like a password: anyone who knows it can read your pool alerts, so keep the random one.</p>
+        <details class="adv"><summary>Advanced</summary>
+          <label class="field"><span>ntfy server</span><input type="url" id="alServer" placeholder="https://ntfy.sh"></label>
+        </details>
+      </div>
+      <label class="field"><span id="alThresholdLabel">Cold alert when air drops to (°F)</span>
+        <input type="number" id="alThreshold" step="1" inputmode="numeric"></label>
+      <div class="field"><span>Alerts</span>
+        <label class="check-row"><input type="checkbox" id="alRuleCold"><span>Cold weather (air at the threshold)</span></label>
+        <label class="check-row"><input type="checkbox" id="alRuleFreeze"><span>Freeze protection turns on / off</span></label>
+        <label class="check-row"><input type="checkbox" id="alRulePumpOff"><span><b>Pump not running in freezing air</b> (repeats every 30 min)</span></label>
+        <label class="check-row"><input type="checkbox" id="alRuleStale"><span>No data from the controller</span></label>
+      </div>
+      <div class="sheet-actions">
+        <button type="button" class="btn" id="alTest">Send test</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="alCancel">Cancel</button>
+        <button type="submit" class="btn primary" id="alSave">Save</button>
+      </div>
+    </form>
+  </dialog>
+
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script src="app.js"></script>
   <script src="panel.js"></script>
+  <script src="alerts-ui.js"></script>
 </body>
 </html>

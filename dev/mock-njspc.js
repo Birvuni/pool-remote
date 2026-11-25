@@ -55,6 +55,10 @@ let schedules = [
 ];
 
 const circuitById = (id) => circuits.find((c) => c.id === id);
+// PUT /mock/weather {air, freeze}: change air temperature / freeze protection for testing alerts.
+const weather = { air: 64, freeze: false };
+// MOCK_SWITCH_DELAY_MS: pool/spa changes take effect after this delay (valves and pump are slow).
+const SWITCH_DELAY = parseInt(process.env.MOCK_SWITCH_DELAY_MS || '0', 10);
 
 function syncBodies() {
   for (const b of bodies) {
@@ -69,6 +73,14 @@ const config = require('./mock-config')({ circuits, features, circuitTypes, bodi
 function setCircuit(id, isOn) {
   const c = circuitById(id);
   if (!c) throw Object.assign(new Error(`Invalid circuit id ${id}`), { status: 400 });
+  if (SWITCH_DELAY && (id === 1 || id === 6)) {
+    setTimeout(() => applyCircuit(c, id, isOn), SWITCH_DELAY);
+    return c;
+  }
+  return applyCircuit(c, id, isOn);
+}
+
+function applyCircuit(c, id, isOn) {
   c.isOn = isOn;
   // EasyTouch shared body: pool and spa are mutually exclusive.
   if (isOn && (id === 1 || id === 6)) circuitById(id === 1 ? 6 : 1).isOn = false;
@@ -100,7 +112,8 @@ function stateAll() {
     status: { val: 1, name: 'ready', desc: 'Ready', percent: 100 },
     appVersion: 'mock',
     time: config.panelTime(),
-    temps: { air: 64, units: { val: 0, name: 'F', desc: 'Fahrenheit' }, bodies },
+    freeze: weather.freeze,
+    temps: { air: weather.air, units: { val: 0, name: 'F', desc: 'Fahrenheit' }, bodies },
     equipment: { model: 'EasyTouch2 4', controllerType: 'easytouch' },
     circuits,
     features,
@@ -145,6 +158,11 @@ http.createServer((req, res) => {
     console.log(key, raw);
     try {
       if (key === 'GET /state/all') return send(res, 200, stateAll());
+      if (key === 'PUT /mock/weather') {
+        if (typeof body.air === 'number') weather.air = body.air;
+        if (typeof body.freeze === 'boolean') weather.freeze = body.freeze;
+        return send(res, 200, weather);
+      }
       const cfg = config.handle(key, body);
       if (cfg !== undefined) return send(res, 200, cfg);
       if (key === 'GET /app/options/logger') return send(res, 200, { packet: { enabled: packetLogging, logToConsole: packetLogging } });

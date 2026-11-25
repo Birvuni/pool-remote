@@ -20,6 +20,8 @@ and talks to it through njsPC's REST API.
     - Costs are computed from logged run time and the *current* rating, so correcting a
       rating also corrects past days.
 - Schedules: view, add, edit, delete
+- **Cold-weather alerts**: in-app banner and history, phone notifications via the free ntfy app
+  (Cold-weather alerts → Settings: turn on, subscribe to the shown topic in ntfy, Send test)
 - **Pi health** strip at the top (CPU, temperature, memory, Wi-Fi, power-supply warnings; tap for details)
 - **Analytics** page (Energy → Analytics): cost, energy and run time by equipment, per day or month
 - Release version at the bottom of every page; see [CHANGELOG.md](CHANGELOG.md)

@@ -334,19 +334,60 @@ function renderNow() {
   $('heroNow').innerHTML = rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('');
 }
 
+// A mode change in progress: the chosen button blinks until the controller reports that mode.
+const MODE_SWITCH_TIMEOUT_MS = 2 * 60 * 1000;
+let modeSwitch = null;   // { target: 'off' | body id (string), since }
+let modeSwitchTimer = null;
+
+function modeReached(target) {
+  const list = bodies();
+  if (target === 'off') return !list.some((b) => b.isOn);
+  return !!list.find((b) => String(b.id) === String(target))?.isOn;
+}
+
+function modeName(target) {
+  if (target === 'off') return 'Off';
+  return bodies().find((b) => String(b.id) === String(target))?.name || 'the new mode';
+}
+
+function startModeSwitch(target) {
+  modeSwitch = { target: String(target), since: Date.now() };
+  clearInterval(modeSwitchTimer);
+  modeSwitchTimer = setInterval(renderMode, 1000); // checks for success / timeout
+  renderMode();
+}
+
+function endModeSwitch() {
+  modeSwitch = null;
+  clearInterval(modeSwitchTimer);
+  modeSwitchTimer = null;
+}
+
 function renderMode() {
   const list = bodies();
+  if (modeSwitch && S) {
+    if (modeReached(modeSwitch.target)) endModeSwitch();
+    else if (Date.now() - modeSwitch.since > MODE_SWITCH_TIMEOUT_MS) {
+      toast(`Still not in ${modeName(modeSwitch.target)} mode after 2 minutes. Check the controller.`, true);
+      endModeSwitch();
+    }
+  }
+  const sw = modeSwitch?.target ?? null;
   const activeIds = list.filter((b) => b.isOn).map((b) => b.id);
   const busy = isBusy('mode');
-  const btns = [`<button role="radio" data-mode="off" aria-checked="${activeIds.length === 0}" ${busy ? 'disabled' : ''}>Off</button>`];
+  // While switching, show the chosen mode as selected (blinking) instead of the old one.
+  const checked = (key, isActive) => (sw !== null ? sw === key : isActive);
+  const cls = (key, extra) => [extra, sw === key ? 'switching' : ''].filter(Boolean).join(' ');
+  const btns = [`<button role="radio" class="${cls('off')}" data-mode="off" aria-checked="${checked('off', activeIds.length === 0)}" ${sw === 'off' ? 'aria-busy="true"' : ''} ${busy ? 'disabled' : ''}>Off</button>`];
   for (const b of list) {
     const isSpa = (b.type?.name || '').toLowerCase() === 'spa' || /spa/i.test(b.name || '');
-    btns.push(`<button role="radio" class="${isSpa ? 'spa' : ''}" data-mode="${b.id}" aria-checked="${activeIds.includes(b.id)}" ${busy ? 'disabled' : ''}>${esc(b.name || 'Body ' + b.id)}</button>`);
+    const key = String(b.id);
+    btns.push(`<button role="radio" class="${cls(key, isSpa ? 'spa' : '')}" data-mode="${b.id}" aria-checked="${checked(key, activeIds.includes(b.id))}" ${sw === key ? 'aria-busy="true"' : ''} ${busy ? 'disabled' : ''}>${esc(b.name || 'Body ' + b.id)}</button>`);
   }
   $('modeButtons').innerHTML = btns.join('');
   const on = list.find((b) => b.isOn);
-  $('modeHint').textContent = busy
-    ? 'Switching… valves and pump may take a minute.'
+  $('modeHint').textContent = sw !== null
+    ? `Switching to ${modeName(sw)}… valves and pump can take a minute.`
     : on ? `Pump running in ${on.name} mode.` : 'Pump is off.';
 }
 
@@ -546,7 +587,17 @@ function renderFooter() {
 
 // ---------- Actions ----------
 async function setMode(target) {
+  if (modeSwitch?.target === String(target)) return; // already switching there
+  if (!modeSwitch && modeReached(target)) return;     // already in that mode
+  startModeSwitch(target);
   await withPending('mode', async () => {
+    try { await sendMode(target); } catch (err) { endModeSwitch(); throw err; }
+  });
+  renderMode();
+}
+
+async function sendMode(target) {
+  {
     const list = bodies();
     if (target === 'off') {
       for (const b of list.filter((x) => x.isOn)) {
@@ -564,7 +615,7 @@ async function setMode(target) {
         await api('PUT', '/state/circuit/setState', { id: other.circuit, isOn: false });
       }
     }
-  });
+  }
 }
 
 function bumpSetpoint(bodyId, delta) {
@@ -1056,38 +1107,55 @@ function fmtDuration(sec) {
   return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
 }
 
-// Status levels for the strip. Each warning carries a word, never color alone.
-function systemFlags(x) {
-  const flags = [];
+// Pi health: four equal tiles (CPU, temperature, memory, Wi-Fi), each with a value and a status
+// word, plus full-width notes for things that aren't a single number (power supply, disk).
+// Status is always a word as well as a color.
+function piTiles(x) {
+  const tiles = [];
+  const cpu = typeof x.cpuPct === 'number' ? Math.round(x.cpuPct) : null;
+  tiles.push(cpu === null ? ['CPU', '—', 'Measuring', 'ok']
+    : [`CPU`, `${cpu}%`, cpu >= 90 ? 'Very busy' : cpu >= 70 ? 'Busy' : 'OK', cpu >= 90 ? 'bad' : cpu >= 70 ? 'warn' : 'ok']);
+  if (typeof x.tempC === 'number') {
+    const shown = unit() === '°C' ? `${Math.round(x.tempC)}°C` : `${Math.round(x.tempC * 9 / 5 + 32)}°F`;
+    tiles.push(['Chip temp', shown, x.tempC >= 80 ? 'Too hot' : x.tempC >= 70 ? 'Hot' : 'OK', x.tempC >= 80 ? 'bad' : x.tempC >= 70 ? 'warn' : 'ok']);
+  } else tiles.push(['Chip temp', '—', 'No sensor', 'ok']);
+  const mem = x.memory ? Math.round(x.memory.pct) : null;
+  tiles.push(mem === null ? ['Memory', '—', '', 'ok'] : ['Memory', `${mem}%`, mem >= 90 ? 'Almost full' : 'OK', mem >= 90 ? 'warn' : 'ok']);
+  if (x.wifi) {
+    const d = Math.round(x.wifi.dbm);
+    const word = d > -55 ? 'Excellent' : d > -67 ? 'Good' : d > -70 ? 'Fair' : d > -80 ? 'Weak' : 'Very weak';
+    tiles.push(['Wi-Fi', `${d} dBm`, word, d <= -80 ? 'bad' : d <= -70 ? 'warn' : 'ok']);
+  } else tiles.push(['Wi-Fi', '—', 'Not on Wi-Fi', 'ok']);
+  return tiles;
+}
+
+function piNotes(x) {
+  const notes = [];
   const p = x.power;
-  if (p?.underVoltageNow) flags.push(['bad', 'Low power now']);
-  else if (p?.underVoltageSinceBoot) flags.push(['warn', 'Low power earlier']);
-  if (p?.throttledNow) flags.push(['bad', 'Slowed down']);
-  if (x.tempC >= 80) flags.push(['bad', 'Too hot']);
-  else if (x.tempC >= 70) flags.push(['warn', 'Hot']);
-  if (x.wifi && x.wifi.dbm <= -80) flags.push(['bad', 'Wi-Fi very weak']);
-  else if (x.wifi && x.wifi.dbm <= -70) flags.push(['warn', 'Wi-Fi weak']);
-  if (x.disk && x.disk.pct >= 90) flags.push(['warn', 'Disk almost full']);
-  if (x.memory && x.memory.pct >= 90) flags.push(['warn', 'Memory almost full']);
-  return flags;
+  if (p?.underVoltageNow) notes.push(['bad', '<b>Low power right now.</b> The Pi isn\'t getting enough voltage, which can corrupt its SD card. Use the official 5.1 V 2.5 A supply.']);
+  else if (p?.underVoltageSinceBoot) notes.push(['warn', '<b>Power dipped since the Pi started.</b> Its supply briefly dropped below 5 V. If this keeps showing, use the official 2.5 A supply or a shorter cable.']);
+  if (p?.throttledNow) notes.push(['bad', '<b>The Pi is slowing itself down</b> because of heat or low power.']);
+  if (x.disk && x.disk.pct >= 90) notes.push(['warn', `<b>Storage almost full:</b> ${x.disk.freeGB.toFixed(1)} GB left.`]);
+  return notes;
 }
 
 function wifiWord(dbm) {
-  return dbm > -55 ? 'excellent' : dbm > -67 ? 'good' : dbm > -75 ? 'fair' : 'weak';
+  return dbm > -55 ? 'excellent' : dbm > -67 ? 'good' : dbm > -70 ? 'fair' : dbm > -80 ? 'weak' : 'very weak';
 }
 
 function renderSystem() {
   const x = SYS;
   if (!x) return;
   $('piStrip').hidden = false;
-  const parts = [];
-  if (typeof x.cpuPct === 'number') parts.push(`<span class="pi-metric">CPU <b>${Math.round(x.cpuPct)}%</b></span>`);
-  if (typeof x.tempC === 'number') parts.push(`<span class="pi-metric"><b>${Math.round(x.tempC)}°C</b></span>`);
-  if (x.memory) parts.push(`<span class="pi-metric">RAM <b>${Math.round(x.memory.pct)}%</b></span>`);
-  if (x.wifi) parts.push(`<span class="pi-metric">Wi-Fi <b>${Math.round(x.wifi.dbm)} dBm</b></span>`);
-  for (const [lvl, text] of systemFlags(x)) parts.push(`<span class="pi-flag ${lvl}">⚠ ${esc(text)}</span>`);
-  if (!systemFlags(x).length) parts.push('<span class="pi-metric">OK</span>');
-  $('piSummary').innerHTML = parts.join('');
+  const tiles = piTiles(x);
+  const notes = piNotes(x);
+  $('piSummary').innerHTML = tiles.map(([k, v, s, lvl]) => `
+    <div class="pi-tile lvl-${lvl}"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span><span class="s">${lvl === 'ok' ? '' : '⚠ '}${esc(s)}</span></div>`).join('');
+  $('piNotes').innerHTML = notes.map(([lvl, html]) => `<div class="pi-note lvl-${lvl}">${html}</div>`).join('');
+  const levels = tiles.map((t) => t[3]).concat(notes.map((n) => n[0]));
+  const bad = levels.filter((l) => l === 'bad').length, warn = levels.filter((l) => l === 'warn').length;
+  $('piOverall').innerHTML = bad ? `<span class="dot bad"></span>Needs attention`
+    : warn ? `<span class="dot warn"></span>${warn} warning${warn > 1 ? 's' : ''}` : '<span class="dot ok"></span>All good';
 
   const p = x.power;
   const powerText = !p ? 'Not available' : p.underVoltageNow ? 'Under-voltage now: use the official 2.5 A supply'
@@ -1106,10 +1174,11 @@ function renderSystem() {
   $('piDetails').innerHTML = `<table class="etable">${rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('')}</table>`;
 }
 
-$('piStrip').addEventListener('click', () => {
+$('piToggle').addEventListener('click', () => {
   const open = $('piDetails').hidden;
   $('piDetails').hidden = !open;
-  $('piStrip').setAttribute('aria-expanded', String(open));
+  $('piToggle').setAttribute('aria-expanded', String(open));
+  $('piToggle').textContent = open ? 'Hide' : 'Details';
 });
 
 // ---------- Events ----------

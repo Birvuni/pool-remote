@@ -100,7 +100,7 @@ function pumpSection() {
     return `
       <section class="pset">
         <h3>Pump speeds · ${esc(p.name || t.desc)}</h3>
-        ${mismatch ? `<p class="warn">poolController has this pump as #${p.id} but it is EasyTouch slot ${slot}, so saving would
+        ${mismatch ? `<p class="warn-note">poolController has this pump as #${p.id} but it is EasyTouch slot ${slot}, so saving would
           write to the wrong slot. Run <code>node dev/patch-njspc-pump.js</code> on the Pi and restart poolController.</p>` : ''}
         <p class="hint">The speed the pump runs at while each circuit is on (${t.minSpeed}–${t.maxSpeed} RPM). When several are on, the highest wins.</p>
         <div class="speed-list">${rowHtml || '<p class="empty">No speeds set.</p>'}</div>

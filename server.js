@@ -8,6 +8,7 @@ const path = require('path');
 const energy = require('./energy');
 const system = require('./system');
 const updater = require('./updater');
+const alerts = require('./alerts');
 const { execFile } = require('child_process');
 
 // Release version (package.json) + the git commit actually running, for the page footer.
@@ -120,6 +121,18 @@ function local(req, res) {
   }
   if (req.method === 'GET' && url === '/local/system') return sendJson(res, 200, system.report());
   if (req.method === 'GET' && url === '/local/version') return sendJson(res, 200, VERSION);
+  if (req.method === 'GET' && url === '/local/alerts') return sendJson(res, 200, alerts.report());
+  if (req.method === 'PUT' && url === '/local/alerts/settings') {
+    let raw = '';
+    req.on('data', (c) => { raw += c; if (raw.length > 5000) req.destroy(); });
+    req.on('end', () => {
+      try { sendJson(res, 200, alerts.setSettings(JSON.parse(raw || '{}'))); } catch (err) { sendJson(res, 400, { message: err.message }); }
+    });
+    return;
+  }
+  if (req.method === 'POST' && url === '/local/alerts/test') {
+    return alerts.test().then((a) => sendJson(res, 200, a)).catch((err) => sendJson(res, 502, { message: err.message }));
+  }
   if (req.method === 'POST' && url === '/local/energy/delete-days') {
     if (req.headers['x-pool-remote'] !== 'delete-days') return sendJson(res, 403, { message: 'Missing confirmation header' });
     let raw = '';
@@ -171,6 +184,7 @@ const server = http.createServer((req, res) => {
 });
 
 energy.start(NJSPC_URL);
+alerts.start(NJSPC_URL);
 system.start();
 
 server.listen(PORT, () => {

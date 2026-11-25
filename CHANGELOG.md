@@ -7,6 +7,18 @@ Every change to Pool Remote gets a release version, shown at the bottom of the a
 cd ~/pool-remote && git pull && pm2 restart poolRemote
 ```
 
+## 1.8.0 — 2026-11-25
+- **Cold-weather alerts** (new card + settings): cold air at your threshold (default 38°F),
+  freeze protection on/off, **pump not running in freezing air** (urgent, repeats every 30 min),
+  and "no data from the controller". A banner at the top shows cold / freeze protection /
+  danger, with a one-tap "Start Pool". Phone notifications through the free **ntfy** app
+  (private random topic, Send test button); history of recent alerts in the app.
+- **Mode buttons blink slowly** while a mode change is in progress, until the controller
+  confirms it (up to 2 minutes; then a message). Reduced-motion setting: dashed outline instead.
+- **Raspberry Pi card redesigned:** four equal tiles (CPU, chip temp, memory, Wi-Fi) with a value
+  and a status word each, power-supply notes underneath, overall status and Details.
+- Fix: warning tiles/dots were mis-sized by a style that leaked from Panel settings.
+
 ## 1.7.2 — 2026-11-23
 - **Frozen-data warning.** If poolController stops getting updates from the controller (its copy
   of the panel clock stops advancing for 3 minutes, or is hours behind), the status line turns
