@@ -7,6 +7,11 @@ Every change to Pool Remote gets a release version, shown at the bottom of the a
 cd ~/pool-remote && git pull && pm2 restart poolRemote
 ```
 
+## 1.13.1 — 2026-11-25
+- Fix: Cold-weather alerts settings looked broken on iPhone. The list of alerts had huge
+  checkboxes and its labels squeezed into a sliver at the right edge (a text-box style was
+  also applied to the checkboxes).
+
 ## 1.13.0 — 2026-11-25
 - **Freeze protection in Panel settings** (gear → Panel settings, second section):
   - the panel's freeze temperature (36°F air, fixed by the EasyTouch), the air now, and whether
