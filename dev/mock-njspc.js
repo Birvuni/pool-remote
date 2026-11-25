@@ -69,7 +69,10 @@ function syncBodies() {
   for (const b of bodies) {
     b.isOn = !!circuitById(b.circuit)?.isOn;
     const heating = b.isOn && b.heatMode.name !== 'off' && b.temp < b.setPoint;
-    b.heatStatus = heating ? { val: 1, name: 'heater', desc: 'Heater' } : { val: 0, name: 'off', desc: 'Off' };
+    // MOCK_SPA_HEATSTATUS_BROKEN=1: like poolController on some EasyTouch pool/spa setups, the spa
+    // reports heatStatus "off" while it heats.
+    const broken = process.env.MOCK_SPA_HEATSTATUS_BROKEN && b.id === 2;
+    b.heatStatus = heating && !broken ? { val: 1, name: 'heater', desc: 'Heater' } : { val: 0, name: 'off', desc: 'Off' };
   }
 }
 

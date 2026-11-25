@@ -36,7 +36,8 @@ let live = { watts: 0, rpm: 0, flow: 0, on: {}, at: null, ok: false, pumps: 0 };
 let dirty = false;
 // Logger health, shown in the app so a logger that isn't recording is visible.
 const stats = { startedAt: Date.now(), recorded: 0, staleSkips: 0, errors: 0, lastError: null, lastErrorAt: null,
-  lastRecordAt: null, lastStaleAt: null, savedAt: null, saveError: null };
+  lastRecordAt: null, lastStaleAt: null, savedAt: null, saveError: null,
+  heat: { both: 0, statusOnly: 0, tempOnly: 0 } }; // readings where the heater counted as firing, by signal
 // Frozen-data watchdog: poolController's copy of the panel clock (state.time) advances every few
 // seconds while it receives status from the controller. If it stops, its data is stale.
 const STALE_MS = 3 * 60 * 1000;      // no panel-clock change for this long = stale
@@ -203,9 +204,25 @@ function getJson(njspcUrl, urlPath) {
 }
 
 // Which equipment items are running, given a /state/all snapshot.
+// Is the gas heater firing? poolController's heatStatus says so directly, but on some EasyTouch
+// pool/spa setups it reads the spa's heater bit wrong and reports "off" while the spa heats.
+// Backup: the EasyTouch fires the heater whenever the running body has a heat mode set and is
+// below its set point, so count that too.
+function heaterSignals(state) {
+  const list = state?.temps?.bodies || [];
+  const byStatus = list.some((b) => GAS_HEAT_STATUSES.has((b?.heatStatus?.name || '').toLowerCase()));
+  const byTemp = list.some((b) => {
+    const mode = (b?.heatMode?.name || 'off').toLowerCase();
+    return b?.isOn && mode !== 'off' && mode !== 'solar'
+      && typeof b.temp === 'number' && typeof b.setPoint === 'number' && b.temp < b.setPoint;
+  });
+  return { byStatus, byTemp };
+}
+
 function equipmentOn(state) {
   const on = {};
-  const heating = (state?.temps?.bodies || []).some((b) => GAS_HEAT_STATUSES.has((b?.heatStatus?.name || '').toLowerCase()));
+  const sig = heaterSignals(state);
+  const heating = sig.byStatus || sig.byTemp;
   const isOn = (list, id) => !!(list || []).find((x) => x && x.id === id)?.isOn;
   for (const e of store.equipment) {
     const src = e.source || {};
@@ -233,6 +250,11 @@ async function sample(njspcUrl) {
     }
     const on = equipmentOn(state);
     const fresh = freshness(state, now);
+    const sig = heaterSignals(state);
+    if (!fresh.stale && (sig.byStatus || sig.byTemp)) {
+      // Which signal saw the heater: shows whether poolController's heat status is reliable here.
+      stats.heat[sig.byStatus ? (sig.byTemp ? 'both' : 'statusOnly') : 'tempOnly']++;
+    }
     if (fresh.stale) {
       // Don't record frozen data as if equipment kept running (it isn't real usage).
       last = null;
@@ -534,4 +556,4 @@ function start(njspcUrl) {
   });
 }
 
-module.exports = { start, report, history, freshSample, setRate, setSettings, deleteDays, _test: { accumulate, dayKey, getStore: () => store, summarize, equipmentOn, freshness, sample } };
+module.exports = { heaterSignals, start, report, history, freshSample, setRate, setSettings, deleteDays, _test: { accumulate, dayKey, getStore: () => store, summarize, equipmentOn, freshness, sample } };

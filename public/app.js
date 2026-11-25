@@ -259,8 +259,14 @@ function renderHero() {
   renderNow();
 }
 
+// Heating if poolController says so, or (backup, see energy.js heaterSignals) the body is on with a
+// heat mode and below its set point: the EasyTouch fires the heater then, even when
+// poolController misreports the spa's heat status.
 function isHeating(b) {
-  return !!(b.heatStatus && b.heatStatus.name && b.heatStatus.name !== 'off');
+  if (b?.heatStatus?.name && b.heatStatus.name !== 'off') return true;
+  const mode = (b?.heatMode?.name || 'off').toLowerCase();
+  return !!(b?.isOn && mode !== 'off' && mode !== 'solar'
+    && typeof b.temp === 'number' && typeof b.setPoint === 'number' && b.temp < b.setPoint);
 }
 
 // Is an Energy-settings equipment item running right now? From live state, so it's instant.
@@ -412,7 +418,7 @@ function renderHeat() {
   const u = unit();
   $('heatList').innerHTML = list.map((b) => {
     const sp = setpointDraft[b.id] ?? b.setPoint;
-    const heating = b.heatStatus && b.heatStatus.name && b.heatStatus.name !== 'off';
+    const heating = isHeating(b);
     const modes = heatModes[b.id]?.length ? heatModes[b.id] : [{ name: 'off', desc: 'Off' }, { name: 'heater', desc: 'Heater' }];
     const busyMode = isBusy('heatmode' + b.id);
     const chips = modes.map((m) => {

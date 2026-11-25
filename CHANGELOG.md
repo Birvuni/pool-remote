@@ -7,6 +7,14 @@ Every change to Pool Remote gets a release version, shown at the bottom of the a
 cd ~/pool-remote && git pull && pm2 restart poolRemote
 ```
 
+## 1.14.0 — 2026-11-25
+- **Heater tracking fix:** gas heater time was missed when poolController reported the heater
+  as off while it was heating (seen on EasyTouch pool/spa setups, mostly for the spa). The
+  heater now also counts as firing whenever the running pool or spa has a heat mode set and is
+  below its set point, which is when the EasyTouch fires it. The top card's "Heating" badge,
+  the Now line and the Heat card use the same check.
+- The energy log records which signal detected the heater (`logger.heat` in /local/energy).
+
 ## 1.13.2 — 2026-11-25
 - Energy: when the pump is off, it shows its **measured power at the speeds it runs**
   (e.g. "949 W at 2,500 RPM · 2,203 W at 3,450 RPM", from the last 30 days) instead of just
