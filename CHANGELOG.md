@@ -7,6 +7,12 @@ Every change to Pool Remote gets a release version, shown at the bottom of the a
 cd ~/pool-remote && git pull && pm2 restart poolRemote
 ```
 
+## 1.11.1 — 2026-11-25
+- **Smooth mode blink:** the button now fades in and out evenly. Before, it restarted every few
+  seconds when the app refreshed, which looked like cuts.
+- **Pool water flows:** when the pool is running, waves roll along the bottom of the top card
+  and light ripples drift across it. Still when the pump is off; flames in Spa mode.
+
 ## 1.11.0 — 2026-11-25
 - **Spa on fire:** when the spa is on, the top card turns orange with animated flames along the
   bottom and rising sparks. Back to blue when the spa is off. (Reduced-motion setting: still

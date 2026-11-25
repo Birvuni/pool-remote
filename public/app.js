@@ -234,7 +234,7 @@ function renderHero() {
   $('heroAir').hidden = typeof air !== 'number';
   $('heroAirTemp').textContent = fmtTemp(air);
   if (!active) {
-    $('hero').classList.remove('spa-on');
+    $('hero').classList.remove('spa-on', 'pool-on');
     $('heroLabel').textContent = 'Water';
     $('heroTemp').textContent = '--';
     $('heroSub').innerHTML = '&nbsp;';
@@ -244,6 +244,7 @@ function renderHero() {
   const anyOn = list.some((b) => b.isOn);
   const spaOn = !!(active.isOn && (/spa/i.test(active.name || '') || active.id === 2));
   $('hero').classList.toggle('spa-on', spaOn);
+  $('hero').classList.toggle('pool-on', !!active.isOn && !spaOn);
   $('heroLabel').textContent = `${active.name || 'Pool'} water`;
   $('heroTemp').textContent = fmtTemp(active.temp);
   const parts = [];
@@ -388,7 +389,16 @@ function renderMode() {
     const key = String(b.id);
     btns.push(`<button role="radio" class="${cls(key, isSpa ? 'spa' : '')}" data-mode="${b.id}" aria-checked="${checked(key, activeIds.includes(b.id))}" ${sw === key ? 'aria-busy="true"' : ''} ${busy ? 'disabled' : ''}>${esc(b.name || 'Body ' + b.id)}</button>`);
   }
-  $('modeButtons').innerHTML = btns.join('');
+  // Redraw only when something changed: rebuilding the buttons on every poll restarted the blink.
+  const html = btns.join('');
+  if ($('modeButtons').dataset.html !== html) {
+    $('modeButtons').innerHTML = html;
+    $('modeButtons').dataset.html = html;
+    // Keep the blink on one shared clock, so a redraw (e.g. the button re-enabling) continues
+    // the fade where it was instead of jumping back to full brightness.
+    const b = $('modeButtons').querySelector('.switching');
+    if (b) b.style.animationDelay = `-${Date.now() % 2000}ms`;
+  }
   const on = list.find((b) => b.isOn);
   $('modeHint').textContent = sw !== null
     ? `Switching to ${modeName(sw)}… valves and pump can take a minute.`
