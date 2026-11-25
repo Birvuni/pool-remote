@@ -7,6 +7,11 @@ Every change to Pool Remote gets a release version, shown at the bottom of the a
 cd ~/pool-remote && git pull && pm2 restart poolRemote
 ```
 
+## 1.13.2 — 2026-11-25
+- Energy: when the pump is off, it shows its **measured power at the speeds it runs**
+  (e.g. "949 W at 2,500 RPM · 2,203 W at 3,450 RPM", from the last 30 days) instead of just
+  "measured". The IntelliFlo reports real watts, so it needs no rating.
+
 ## 1.13.1 — 2026-11-25
 - Fix: Cold-weather alerts settings looked broken on iPhone. The list of alerts had huge
   checkboxes and its labels squeezed into a sliver at the right edge (a text-box style was

@@ -895,6 +895,14 @@ function setEnergyPeriod(p) {
   renderEnergy();
 }
 
+// Pump off: its measured power at the speeds it actually runs (most-used speeds, last 30 days).
+function pumpOffText() {
+  const speeds = (E.bySpeed || []).filter((x) => x.seconds >= 300 && x.avgWatts > 0).slice(0, 3)
+    .sort((a, b) => a.rpm - b.rpm);
+  if (!speeds.length) return 'measured';
+  return speeds.map((x) => `${Math.round(x.avgWatts).toLocaleString()} W at ${x.rpm.toLocaleString()} RPM`).join('<br>');
+}
+
 function renderEnergy() {
   if (!E) return;
   const box = $('energyBody');
@@ -909,7 +917,7 @@ function renderEnergy() {
   if (live.pumps) {
     rows.push(`<div class="live-row"><span class="live-name">Pump</span>
       <span class="live-val">${live.watts > 0 ? `${Math.round(live.watts).toLocaleString()} W` : 'Off'}</span>
-      <span class="meta">${live.watts > 0 ? `${live.rpm ? live.rpm.toLocaleString() + ' RPM · ' : ''}${money(live.watts / 1000 * E.rate)}/hr` : 'measured'}</span></div>`);
+      <span class="meta">${live.watts > 0 ? `${live.rpm ? live.rpm.toLocaleString() + ' RPM · ' : ''}${money(live.watts / 1000 * E.rate)}/hr` : pumpOffText()}</span></div>`);
   }
   for (const e of E.equipment || []) {
     const on = !!live.on?.[e.id];
