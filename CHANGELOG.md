@@ -7,6 +7,10 @@ Every change to Pool Remote gets a release version, shown at the bottom of the a
 cd ~/pool-remote && git pull && pm2 restart poolRemote
 ```
 
+## 1.9.1 — 2026-11-25
+- **Panel settings button moved** into the top card (water / air / Now), labeled
+  "Panel settings" with the gear, instead of a small icon in the title bar.
+
 ## 1.9.0 — 2026-11-25
 - **IntelliBrite colors:** the Lights card has buttons for the 6 light shows (Party, Romance,
   Caribbean, American, California Sunset, Royal) and 5 colors (Blue, Green, Red, White, Magenta).

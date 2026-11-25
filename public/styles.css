@@ -144,6 +144,18 @@ main {
   font-size: 14px;
 }
 .hero-now:empty { display: none; }
+.hero-actions { display: flex; justify-content: flex-end; margin-top: 14px; }
+.hero-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  min-height: 40px; padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .45);
+  background: rgba(255, 255, 255, .16);
+  color: #fff; font: inherit; font-size: 14px; font-weight: 600;
+  cursor: pointer;
+}
+.hero-btn:hover { background: rgba(255, 255, 255, .26); }
+.hero-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .hero-now dt { opacity: .8; font-weight: 600; }
 .hero-now dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
 .badge {
