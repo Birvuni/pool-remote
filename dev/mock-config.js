@@ -36,7 +36,10 @@ module.exports = function makeConfig({ circuits, features, circuitTypes, bodies,
   const dsType = { val: 65, name: 'ds', desc: 'Two-Speed', maxCircuits: 4, hasAddress: false };
   const vsPump = {
     id: parseInt(process.env.MOCK_PUMP_ID || '1', 10), type: 128, address: 96, name: 'Intelliflo VS', isActive: true,
-    circuits: [{ id: 1, circuit: 6, speed: 2500, units: 0 }, { id: 2, circuit: 1, speed: 3000, units: 0 }, { id: 3, circuit: 4, speed: 2000, units: 0 }],
+    // MOCK_NO_SPA_SPEED=1: like the real pool, Spa has no speed (pump runs only with the heater).
+    circuits: process.env.MOCK_NO_SPA_SPEED
+      ? [{ id: 1, circuit: 6, speed: 2500, units: 0 }, { id: 2, circuit: 4, speed: 2000, units: 0 }]
+      : [{ id: 1, circuit: 6, speed: 2500, units: 0 }, { id: 2, circuit: 1, speed: 3000, units: 0 }, { id: 3, circuit: 4, speed: 2000, units: 0 }],
   };
   const dsPump = { id: 10, type: 65, name: 'Two Speed', isActive: true, circuits: [] };
 

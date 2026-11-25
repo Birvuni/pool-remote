@@ -7,6 +7,11 @@ Every change to Pool Remote gets a release version, shown at the bottom of the a
 cd ~/pool-remote && git pull && pm2 restart poolRemote
 ```
 
+## 1.10.1 — 2026-11-25
+- **Spa pump keeps running:** Panel settings → Pump speeds warns when Spa has no speed of its
+  own (the pump then runs only while the heater fires, so it stops at temperature). One tap on
+  "Add Spa speed (2,500 RPM)" adds it; adjust the RPM if you like, then Save speeds.
+
 ## 1.10.0 — 2026-11-25
 - **Update history** in the app: tap "Update history" at the bottom of the page to see every
   release and what changed, newest first. The version on your Pi is marked "Installed".

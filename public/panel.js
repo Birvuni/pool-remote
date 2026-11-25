@@ -85,6 +85,17 @@ function pumpSection() {
     const mismatch = slot !== null && p.id !== slot;
     const rows = pumpDraft(p);
     const step = t.speedStepSize || 10;
+    // Spa with no speed of its own: the pump runs only while the heater fires ("Spa Heater"),
+    // so it stops and starts with the heater. Checked against what's saved on the panel.
+    const spa = refs.find((c) => /^spa$/i.test(c.name)) || refs.find((c) => c.id === 1);
+    const savedIds = (p.circuits || []).map((c) => (c && typeof c.circuit === 'object' ? c.circuit.id : c?.circuit));
+    const spaMissing = spa && !mismatch && !savedIds.includes(spa.id);
+    const spaInDraft = spa && rows.some((r) => r.circuit === spa.id);
+    const spaNote = spaMissing ? `<p class="warn-note"><b>Spa has no pump speed.</b> In Spa mode the pump then runs only while
+      the heater is firing, so it stops when the spa reaches temperature and starts again when it cools.
+      ${spaInDraft ? 'Tap <b>Save speeds</b> to send it to the panel.'
+        : `Give Spa a speed to keep the pump running the whole time Spa is on.
+      <button type="button" class="btn small" data-spa-speed="${p.id}:${spa.id}">Add Spa speed (2,500 RPM)</button>`}</p>` : '';
     const rowHtml = rows.map((r, i) => `
       <div class="speed-row" data-pump="${p.id}" data-row="${i}">
         <select data-k="circuit" ${mismatch ? 'disabled' : ''}>
@@ -102,6 +113,7 @@ function pumpSection() {
         <h3>Pump speeds · ${esc(p.name || t.desc)}</h3>
         ${mismatch ? `<p class="warn-note">poolController has this pump as #${p.id} but it is EasyTouch slot ${slot}, so saving would
           write to the wrong slot. Run <code>node dev/patch-njspc-pump.js</code> on the Pi and restart poolController.</p>` : ''}
+        ${spaNote}
         <p class="hint">The speed the pump runs at while each circuit is on (${t.minSpeed}–${t.maxSpeed} RPM). When several are on, the highest wins.</p>
         <div class="speed-list">${rowHtml || '<p class="empty">No speeds set.</p>'}</div>
         <div class="pset-actions">
@@ -403,6 +415,14 @@ $('panelBody').addEventListener('click', (e) => {
     const p = speedPumps().find((x) => x.id === id);
     PANEL.pumpDraft[id].push({ circuit: 0, speed: pumpTypeOf(p).minSpeed > 1000 ? pumpTypeOf(p).minSpeed : 1800, units: 0 });
     return renderPanel();
+  }
+  if (t.dataset.spaSpeed) {
+    const [id, spaId] = t.dataset.spaSpeed.split(':').map(Number);
+    readSpeedRows(id);
+    PANEL.pumpDraft[id].push({ circuit: spaId, speed: 2500, units: 0 });
+    renderPanel();
+    document.querySelector(`.speed-row[data-pump="${id}"]:last-of-type [data-k="speed"]`)?.focus();
+    return;
   }
   if (t.dataset.speedRemove) {
     const [id, i] = t.dataset.speedRemove.split(':').map(Number);
