@@ -887,6 +887,14 @@ function itemEnergyText(e, it) {
   return e.energy === 'gas' ? fmtGas(it.gasUnits) : kwh(it.kWh);
 }
 
+const PERIOD_KEY = 'poolRemote.energyPeriod';
+let energyPeriod = (() => { try { return localStorage.getItem(PERIOD_KEY) || 'today'; } catch { return 'today'; } })();
+function setEnergyPeriod(p) {
+  energyPeriod = p;
+  try { localStorage.setItem(PERIOD_KEY, p); } catch { /* storage unavailable */ }
+  renderEnergy();
+}
+
 function renderEnergy() {
   if (!E) return;
   const box = $('energyBody');
@@ -914,62 +922,71 @@ function renderEnergy() {
   const pumpNote = live.pumps ? '' : `<p class="hint">The pump isn't reporting power. Connect the IntelliFlo to the
     EasyTouch, or add it in Settings with its watts.</p>`;
 
-  const stat = (label, s, extra = '') => `
-    <div class="stat">
-      <div class="label">${label}</div>
-      <div class="cost">${money(s.totalCost)}</div>
-      <div class="kwh">Elec ${money(s.elecCost)}<br>Gas ${money(s.gasCost)}${extra}</div>
-    </div>`;
+  // Tap Today / Last 7 days / This month: the details below follow the chosen period.
+  const P = { today: E.today, week: E.week, month: E.month };
+  if (!P[energyPeriod]) energyPeriod = 'today';
+  const sel = P[energyPeriod];
+  const periodName = { today: 'Today', week: 'Last 7 days', month: 'This month' }[energyPeriod];
+  const stat = (key, label, s, extra = '') => `
+    <button type="button" class="stat" data-period="${key}" aria-pressed="${energyPeriod === key}">
+      <span class="label">${label}</span>
+      <span class="cost">${money(s.totalCost)}</span>
+      <span class="kwh">Elec ${money(s.elecCost)}<br>Gas ${money(s.gasCost)}${extra}</span>
+    </button>`;
   const proj = E.month.projected;
   const projText = proj ? `<br>≈ $${Math.round(proj.totalCost)}/mo` : '';
 
-  // Per-item breakdown over the last 30 days.
-  const L = E.last30;
+  // By equipment for the chosen period.
   const itemRows = [];
-  if (L.pumpKWh > 0) itemRows.push(`<tr><td>Pump (measured)</td><td>${hours(L.runSeconds)}</td><td>${kwh(L.pumpKWh)}</td><td>${money(L.pumpCost)}</td></tr>`);
+  if (sel.pumpKWh > 0) itemRows.push(`<tr><td>Pump (measured)</td><td>${hours(sel.runSeconds)}</td><td>${kwh(sel.pumpKWh)}</td><td>${money(sel.pumpCost)}</td></tr>`);
   for (const e of E.equipment || []) {
-    const it = L.items[e.id];
-    if (!it || it.seconds < 60) continue;
+    const it = sel.items[e.id];
+    if (!it || it.seconds < 30) continue;
     itemRows.push(`<tr><td>${esc(e.name)}</td><td>${hours(it.seconds)}</td><td>${itemEnergyText(e, it)}</td><td>${money(it.cost)}</td></tr>`);
   }
-  const itemTable = itemRows.length ? `
-    <div class="subhead">By equipment · last 30 days</div>
-    <table class="etable">
+  if (itemRows.length > 1) itemRows.push(`<tr class="total"><td>Total</td><td></td><td></td><td>${money(sel.totalCost)}</td></tr>`);
+  const itemTable = `
+    <div class="subhead">By equipment</div>
+    ${itemRows.length ? `<table class="etable">
       <tr><th>Equipment</th><th>Time</th><th>Energy</th><th>Cost</th></tr>
       ${itemRows.join('')}
-    </table>` : '';
+    </table>` : `<p class="empty">Nothing ran ${energyPeriod === 'today' ? 'today' : 'in this period'}.</p>`}`;
 
-  const speeds = (E.bySpeed || []).filter((s) => s.seconds >= 60).slice(0, 6);
+  const speeds = (sel.bySpeed || []).filter((s) => s.seconds >= 30).slice(0, 8);
   const speedTable = speeds.length ? `
-    <div class="subhead">Pump by speed · last 30 days</div>
+    <div class="subhead">Pump by speed</div>
     <table class="etable">
       <tr><th>Speed</th><th>Time</th><th>Avg power</th><th>Cost</th></tr>
       ${speeds.map((s) => `<tr><td>${s.rpm.toLocaleString()} RPM</td><td>${hours(s.seconds)}</td><td>${Math.round(s.avgWatts).toLocaleString()} W</td><td>${money(s.cost)}</td></tr>`).join('')}
     </table>` : '';
 
-  const days = (E.days || []).slice(0, 7);
-  const dayTable = `
-    <div class="subhead">Last 7 days</div>
+  const todayKey = E.days?.[0]?.date;
+  const days = sel.days || [];
+  const dayTable = days.length ? `
+    <div class="subhead">By day</div>
     <table class="etable">
       <tr><th>Day</th><th>Electric</th><th>Gas</th><th>Total</th></tr>
-      ${days.map((d, i) => {
-        const label = i === 0 ? 'Today' : new Date(d.date + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+      ${days.map((d) => {
+        const label = d.date === todayKey ? 'Today' : new Date(d.date + 'T12:00:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
         return `<tr><td>${label}</td><td>${money(d.elecCost)}</td><td>${d.gasCost ? money(d.gasCost) : '—'}</td><td>${money(d.totalCost)}</td></tr>`;
       }).join('')}
-    </table>`;
+    </table>` : '';
 
   box.innerHTML = `
     <div class="live">${rows.join('')}</div>
     ${pumpNote}
-    <div class="stats">
-      ${stat('Today', E.today)}
-      ${stat('Last 7 days', E.week)}
-      ${stat('This month', E.month, projText)}
+    <div class="stats" role="group" aria-label="Period">
+      ${stat('today', 'Today', E.today)}
+      ${stat('week', 'Last 7 days', E.week)}
+      ${stat('month', 'This month', E.month, projText)}
     </div>
-    ${itemTable}
-    ${speedTable}
-    ${dayTable}
-    ${loggerNote()}
+    <div class="period-detail">
+      <div class="period-title">${periodName} · details</div>
+      ${itemTable}
+      ${speedTable}
+      ${dayTable}
+    </div>
+${loggerNote()}
     <p class="hint">Electricity ${(E.rate * 100).toFixed(2)}¢/kWh · Gas $${g.rate.toFixed(2)}/${esc(g.unit)}
       · Equipment costs are estimated from run time × rating${E.since ? ` · since ${new Date(E.since + 'T12:00:00').toLocaleDateString([], { month: 'short', day: 'numeric' })}` : ''}</p>`;
 }
@@ -1348,6 +1365,7 @@ document.addEventListener('click', (e) => {
   if (t.dataset.mode) return setMode(t.dataset.mode);
   if (t.dataset.theme) return setLightTheme(t.dataset.theme);
   if (t.id === 'lightsPower') return toggleLightsPower();
+  if (t.dataset.period) return setEnergyPeriod(t.dataset.period);
   if (t.dataset.setpoint) return bumpSetpoint(parseInt(t.dataset.body, 10), parseInt(t.dataset.setpoint, 10));
   if (t.dataset.heatmode) {
     if (t.getAttribute('aria-pressed') === 'true') return;

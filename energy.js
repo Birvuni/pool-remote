@@ -306,7 +306,6 @@ function report() {
     dayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - i).getTime()));
   const monthPrefix = today.slice(0, 7);
   const monthKeys = Object.keys(store.days).filter((k) => k.startsWith(monthPrefix));
-  const month = summarize(monthKeys);
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const completed = monthKeys.filter((k) => k !== today);
   // Full-month projection at the pace of the completed days logged so far.
@@ -316,30 +315,42 @@ function report() {
     projected = { totalCost: (c.totalCost / completed.length) * daysInMonth };
   }
 
-  const bySpeed = {};
-  for (const k of lastNDays(30)) {
-    const d = store.days[k];
-    if (!d || !d.bySpeed) continue;
-    for (const [rpm, b] of Object.entries(d.bySpeed)) {
-      const s = bySpeed[rpm] || (bySpeed[rpm] = { rpm: parseInt(rpm, 10), kWh: 0, seconds: 0 });
-      s.kWh += b.kWh;
-      s.seconds += b.seconds;
+  // Pump time and energy per speed over a set of days.
+  const speedsFor = (keys) => {
+    const acc = {};
+    for (const k of keys) {
+      const d = store.days[k];
+      if (!d || !d.bySpeed) continue;
+      for (const [rpm, b] of Object.entries(d.bySpeed)) {
+        const s = acc[rpm] || (acc[rpm] = { rpm: parseInt(rpm, 10), kWh: 0, seconds: 0 });
+        s.kWh += b.kWh;
+        s.seconds += b.seconds;
+      }
     }
-  }
+    return Object.values(acc)
+      .map((s) => ({ ...s, cost: s.kWh * store.rate, avgWatts: s.seconds ? (s.kWh * 3.6e6) / s.seconds : 0 }))
+      .sort((a, b) => b.seconds - a.seconds);
+  };
+  // A period's totals plus its pump speeds and (for multi-day periods) each day, newest first.
+  const period = (keys, withDays) => ({
+    ...summarize(keys),
+    bySpeed: speedsFor(keys),
+    ...(withDays ? { days: keys.map((k) => ({ date: k, ...summarize([k]) })) } : {}),
+  });
+  const monthDayKeys = Array.from({ length: now.getDate() }, (_, i) =>
+    dayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - i).getTime()));
 
   return {
     rate: store.rate,
     gas: { ...store.gas },
     equipment: store.equipment.map((e) => ({ ...e, perHour: itemPerHour(e) })),
     live,
-    today: summarize([today]),
-    week: summarize(lastNDays(7)),
-    month: { ...month, projected },
+    today: period([today], false),
+    week: period(lastNDays(7), true),
+    month: { ...period(monthDayKeys, true), projected },
     last30: summarize(lastNDays(30)),
     days: lastNDays(14).map((k) => ({ date: k, ...summarize([k]) })),
-    bySpeed: Object.values(bySpeed)
-      .map((s) => ({ ...s, cost: s.kWh * store.rate, avgWatts: s.seconds ? (s.kWh * 3.6e6) / s.seconds : 0 }))
-      .sort((a, b) => b.seconds - a.seconds),
+    bySpeed: speedsFor(lastNDays(30)),
     since: Object.keys(store.days).sort()[0] || null,
     logger: { ...stats, now: Date.now(), sampleMs: SAMPLE_MS,
       startsLastHour: (store.starts || []).filter((t) => Date.now() - t < 3600e3).length },

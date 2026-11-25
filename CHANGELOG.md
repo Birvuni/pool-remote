@@ -7,6 +7,12 @@ Every change to Pool Remote gets a release version, shown at the bottom of the a
 cd ~/pool-remote && git pull && pm2 restart poolRemote
 ```
 
+## 1.12.0 — 2026-11-25
+- **Energy details per period:** tap **Today**, **Last 7 days** or **This month** in the Energy
+  card. The details below follow your choice: cost by equipment (with a total that matches the
+  tile), pump time by speed, and, for 7 days or the month, a line per day. Your choice is
+  remembered on the phone.
+
 ## 1.11.3 — 2026-11-25
 - **Energy log fixes** (usage could go unrecorded while the live numbers looked fine):
   - A failed read of poolController no longer throws away the time since the last reading;
