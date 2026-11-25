@@ -76,7 +76,13 @@
 
     <section class="card" id="lightsSection" hidden>
       <div class="section-head">
-        <h2>Lights</h2>
+        <div class="head-left">
+          <h2>Lights</h2>
+          <button type="button" class="power-btn" id="lightsPower" aria-pressed="false" hidden>
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 3v8M7.1 6.6a7 7 0 1 0 9.8 0" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+            <span id="lightsPowerText">Off</span>
+          </button>
+        </div>
         <button class="link-btn" data-edit="lights">Edit</button>
       </div>
       <div class="tiles" id="lightTiles"></div>

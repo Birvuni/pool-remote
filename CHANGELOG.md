@@ -7,6 +7,11 @@ Every change to Pool Remote gets a release version, shown at the bottom of the a
 cd ~/pool-remote && git pull && pm2 restart poolRemote
 ```
 
+## 1.11.2 — 2026-11-25
+- **Lights:** the big "Lights" tile is replaced by a small power button next to the LIGHTS title
+  (gray "Off", glowing yellow "On"). Shows and colors still turn the lights on by themselves.
+  Lights that aren't IntelliBrite (if you ever add any) keep their regular tiles.
+
 ## 1.11.1 — 2026-11-25
 - **Smooth mode blink:** the button now fades in and out evenly. Before, it restarted every few
   seconds when the app refreshed, which looked like cuts.

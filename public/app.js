@@ -171,6 +171,7 @@ function render() {
   renderHeat();
   renderTiles('lights');
   renderLightThemes();
+  renderLightsPower();
   renderTiles('aux');
   renderPumps();
   renderSchedules();
@@ -513,8 +514,48 @@ async function setLightTheme(name) {
   });
 }
 
+function intellibriteCircuits() {
+  return (S?.circuits || []).filter((c) => (c.type?.name || '').toLowerCase() === 'intellibrite');
+}
+
+// With IntelliBrite, the lights' on/off is the small power button next to "Lights";
+// the shows and colors below do the rest, so the IntelliBrite circuits get no tile.
+function renderLightsPower() {
+  const btn = $('lightsPower');
+  const ib = intellibriteGroup() ? intellibriteCircuits() : [];
+  btn.hidden = ib.length === 0;
+  if (!ib.length) return;
+  const on = ib.some((c) => c.isOn);
+  btn.setAttribute('aria-pressed', String(on));
+  btn.setAttribute('aria-label', on ? 'Lights are on. Turn off' : 'Lights are off. Turn on');
+  btn.classList.toggle('busy', isBusy('lights-power'));
+  $('lightsPowerText').textContent = on ? 'On' : 'Off';
+}
+
+async function toggleLightsPower() {
+  const ib = intellibriteCircuits();
+  if (!ib.length) return;
+  const turnOn = !ib.some((c) => c.isOn);
+  await withPending('lights-power', async () => {
+    for (const c of ib) if (!!c.isOn !== turnOn) await api('PUT', '/state/circuit/setState', { id: c.id, isOn: turnOn });
+  });
+}
+
 function renderTiles(group) {
-  const items = tileItems(group);
+  let items = tileItems(group);
+  if (group === 'lights' && intellibriteGroup()) {
+    const ibIds = new Set(intellibriteCircuits().map((c) => c.id));
+    const all = items;
+    items = items.filter((i) => !(i.kind === 'circuit' && ibIds.has(i.id)));
+    const section = $('lightsSection');
+    section.hidden = all.length === 0;
+    $('lightTiles').hidden = items.length === 0;
+    section.querySelector('[data-edit]').hidden = items.length === 0;
+    if (!items.length) return;
+  } else if (group === 'lights') {
+    $('lightTiles').hidden = false;
+    $('lightsSection').querySelector('[data-edit]').hidden = false;
+  }
   const editing = editMode[group];
   const hiddenKeys = new Set(hidden[group]);
   const visible = editing ? items : items.filter((i) => !hiddenKeys.has(`${i.kind}:${i.id}`));
@@ -1286,6 +1327,7 @@ document.addEventListener('click', (e) => {
 
   if (t.dataset.mode) return setMode(t.dataset.mode);
   if (t.dataset.theme) return setLightTheme(t.dataset.theme);
+  if (t.id === 'lightsPower') return toggleLightsPower();
   if (t.dataset.setpoint) return bumpSetpoint(parseInt(t.dataset.body, 10), parseInt(t.dataset.setpoint, 10));
   if (t.dataset.heatmode) {
     if (t.getAttribute('aria-pressed') === 'true') return;
