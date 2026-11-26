@@ -7,6 +7,11 @@ Every change to Pool Remote gets a release version, shown at the bottom of the a
 cd ~/pool-remote && git pull && pm2 restart poolRemote
 ```
 
+## 1.14.1 — 2026-11-26
+- **Cold-weather alerts card moved to the bottom** of the page (after Schedules).
+- Its **recent alerts fold into a drop-down**: closed, it shows how many there are and the
+  latest one; tap to see the list (up to 20). It stays open while the app refreshes.
+
 ## 1.14.0 — 2026-11-25
 - **Heater tracking fix:** gas heater time was missed when poolController reported the heater
   as off while it was heating (seen on EasyTouch pool/spa setups, mostly for the spa). The

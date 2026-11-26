@@ -68,15 +68,22 @@ function renderAlertsCard() {
     ['Freeze protection', st.freeze ? 'Running' : 'Not running'],
   ];
   if (st.ok === false && st.error) rows.push(['Problem', st.error]);
-  const list = (AL.history || []).slice(0, 5).map((a) => `
+  const hist = AL.history || [];
+  const list = hist.slice(0, 20).map((a) => `
     <li class="${a.priority >= 5 ? 'urgent' : ''}">
       <b>${esc(a.title)}</b><br>${esc(a.message)}
       <div class="when">${esc(fmtWhen(a.at))}${a.sent ? ' · sent to phone' : a.error ? ` · not sent: ${esc(a.error)}` : ''}</div>
     </li>`).join('');
+  // Recent alerts fold into a drop-down; keep it open across the periodic redraws.
+  const wasOpen = !!document.querySelector('#alHistory')?.open;
+  const latest = hist[0];
   $('alertsBody').innerHTML = `
     <dl class="al-status">${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
-    <div class="subhead">Recent alerts</div>
-    ${list ? `<ul class="al-list">${list}</ul>` : '<p class="empty">No alerts yet.</p>'}`;
+    ${hist.length ? `<details class="al-history" id="alHistory" ${wasOpen ? 'open' : ''}>
+      <summary><span class="al-sum-title">Recent alerts <span class="al-count">${hist.length}</span></span>
+        <span class="al-sum-latest">Latest: ${esc(latest.title)} · ${esc(fmtWhen(latest.at))}</span></summary>
+      <ul class="al-list">${list}</ul>
+    </details>` : '<p class="hint">No alerts yet.</p>'}`;
 }
 
 function randomTopic() {
