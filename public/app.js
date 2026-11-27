@@ -1313,8 +1313,8 @@ function piTiles(x) {
   tiles.push(mem === null ? ['Memory', '—', '', 'ok'] : ['Memory', `${mem}%`, mem >= 90 ? 'Almost full' : 'OK', mem >= 90 ? 'warn' : 'ok']);
   if (x.wifi) {
     const d = Math.round(x.wifi.dbm);
-    const word = d > -55 ? 'Excellent' : d > -67 ? 'Good' : d > -70 ? 'Fair' : d > -80 ? 'Weak' : 'Very weak';
-    tiles.push(['Wi-Fi', `${d} dBm`, word, d <= -80 ? 'bad' : d <= -70 ? 'warn' : 'ok']);
+    const word = wifiWord(d);
+    tiles.push(['Wi-Fi', `${d} dBm`, word[0].toUpperCase() + word.slice(1), d <= -82 ? 'bad' : d <= -75 ? 'warn' : 'ok']);
   } else tiles.push(['Wi-Fi', '—', 'Not on Wi-Fi', 'ok']);
   return tiles;
 }
@@ -1329,8 +1329,9 @@ function piNotes(x) {
   return notes;
 }
 
+// Tuned for this Pi's light traffic: -70 to -75 dBm works fine, trouble starts around -80.
 function wifiWord(dbm) {
-  return dbm > -55 ? 'excellent' : dbm > -67 ? 'good' : dbm > -70 ? 'fair' : dbm > -80 ? 'weak' : 'very weak';
+  return dbm > -55 ? 'excellent' : dbm > -67 ? 'good' : dbm > -75 ? 'fair' : dbm > -82 ? 'weak' : 'very weak';
 }
 
 function renderSystem() {

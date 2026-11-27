@@ -7,6 +7,10 @@ Every change to Pool Remote gets a release version, shown at the bottom of the a
 cd ~/pool-remote && git pull && pm2 restart poolRemote
 ```
 
+## 1.14.2 — 2026-11-27
+- Pi card: Wi-Fi labels fit this Pi's light traffic. −70 to −75 dBm is now "Fair" (no warning),
+  "Weak" (warning) from −75 to −82 dBm, "Very weak" below −82 dBm. Before, −70 dBm already said "Weak".
+
 ## 1.14.1 — 2026-11-26
 - **Cold-weather alerts card moved to the bottom** of the page (after Schedules).
 - Its **recent alerts fold into a drop-down**: closed, it shows how many there are and the
